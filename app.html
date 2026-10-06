@@ -507,7 +507,7 @@ async function waitLive(url,onTick){
   for(let i=0;i<36;i++){onTick(i*5/10);try{const r=await fetch(url+"?t="+Date.now(),{method:"HEAD",cache:"no-store"});if(r.ok)return true}catch(e){}await sleep(5000)}
   return false;
 }
-let lastPdf=null;
+let lastPdf=null,uploadedSig="";
 const slug=s=>(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30);
 function cleanCliente(s){
   return (s||"").replace(/\(.*?\)/g," ").replace(/[\\/:*?"<>|_]+/g," ")
@@ -676,13 +676,18 @@ async function createPdf(){
   const blob=doc.output("blob"),name=pdfName(),url=ghUrl();
   lastPdf={blob,name,nice:niceName(),url,no:docNo};
   if(!inClaude()&&GH.token){
+    let dlOk=true;try{await saveBlob(lastPdf.nice,blob)}catch(e){dlOk=false}
+    const dlMsg=dlOk?"PDF descargado ("+esc(lastPdf.nice)+"). ":"";
+    const sig=docNo+"|"+JSON.stringify(S);
+    if(sig===uploadedSig){t.style.color="";t.innerHTML="✓ "+dlMsg+"Ya estaba subido, no se vuelve a subir.";showShare();return}
     const nx=$("#next");nx.disabled=true;
     try{
-      t.style.color="var(--muted)";t.textContent="Subiendo el PDF…";
+      t.style.color="var(--muted)";t.textContent=dlMsg+"Subiendo el PDF…";
       const [pub,arc]=await Promise.allSettled([ghUpload(blob,name),ghUpload(blob,arcPath(),"deca-archivo")]);
       if(pub.status==="rejected")throw pub.reason;
+      uploadedSig=sig;
       const arcMsg=arc.status==="fulfilled"?" Copia guardada en el archivo.":"<br><span style=\"color:var(--err)\">No se guardó la copia en el archivo: "+esc(arc.reason?.message||"")+"</span>";
-      t.style.color="";t.innerHTML="✓ PDF subido. Ya puedes enviarlo."+arcMsg+'<br><span id="qrst" class="opt">El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando…</span>';
+      t.style.color="";t.innerHTML="✓ "+dlMsg+"PDF subido. Ya puedes enviarlo."+arcMsg+'<br><span id="qrst" class="opt">El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando…</span>';
       showShare();
       const myNo=docNo;
       waitLive(url,i=>{const s=$("#qrst");if(s&&docNo===myNo)s.textContent="El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando… "+(i*10)+" s"}).then(ok=>{
