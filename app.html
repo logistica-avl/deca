@@ -509,10 +509,20 @@ async function waitLive(url,onTick){
 }
 let lastPdf=null;
 const slug=s=>(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30);
+function cleanCliente(s){
+  return (s||"").replace(/\(.*?\)/g," ").replace(/[\\/:*?"<>|_]+/g," ")
+    .replace(/[\s,.-]+(S\.?\s?L\.?\s?U\.?|S\.?\s?L\.?\s?L\.?|S\.?\s?A\.?\s?U\.?|S\.?\s?L\.?|S\.?\s?A\.?|S\.?\s?C\.?|C\.?\s?B\.?|S\.?\s?COOP\.?(\s?V\.?)?|SOC(IEDAD)?\s+COOP(ERATIVA)?\.?)\s*$/i,"")
+    .replace(/\s+/g," ").trim().slice(0,40)||"Cliente";
+}
+const fmtFile=(y,m,d)=>d+"-"+m+"-"+y;
+function niceName(){
+  const d=S.fecha||today;
+  return [cleanCliente(S.cargador.nombre),slug((S.veh.tractora||"").toUpperCase())||"SIN-MATRICULA",fmtFile(d.slice(0,4),d.slice(5,7),d.slice(8,10))].join("_")+".pdf";
+}
 function arcPath(){
   const d=S.fecha||today,y=d.slice(0,4),m=d.slice(5,7);
   const dest=S.entregas.map(e=>destOf(e).pob).filter(Boolean)[0]||"";
-  return y+"/"+m+"/"+pdfName().replace(/\.pdf$/,"")+"__"+slug(S.veh.tractora.toUpperCase())+"__"+slug(S.cargador.nombre)+"__"+slug(dest)+".pdf";
+  return y+"/"+m+"/"+pdfName().replace(/\.pdf$/,"")+"__"+slug(S.veh.tractora.toUpperCase())+"__"+slug(S.cargador.nombre)+"__"+slug(dest)+"__"+slug(origOf().pob)+".pdf";
 }
 const ghHdr=()=>({Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json"});
 let arcList=null;
@@ -524,8 +534,8 @@ async function loadArchive(){
   if(!r.ok)throw new Error("GitHub respondió con error "+r.status+".");
   const j=await r.json();
   return j.tree.filter(x=>x.type==="blob"&&/DC-\d{8}-.*\.pdf$/.test(x.path)).map(x=>{
-    const f=x.path.split("/").pop().replace(/\.pdf$/,""),[base,mat,carg,dest]=f.split("__"),dm=base.match(/DC-(\d{4})(\d{2})(\d{2})-(\d+)/);
-    return{path:x.path,file:f.split("__")[0]+".pdf",fecha:dm?dm[3]+"/"+dm[2]+"/"+dm[1]:"",orden:dm?dm[1]+dm[2]+dm[3]+dm[4]:"",no:dm?"DC-"+dm[1]+dm[2]+dm[3]+"-"+dm[4]:base,mat:mat||"",carg:(carg||"").replace(/-/g," "),dest:(dest||"").replace(/-/g," ")};
+    const f=x.path.split("/").pop().replace(/\.pdf$/,""),[base,mat,carg,dest,orig]=f.split("__"),dm=base.match(/DC-(\d{4})(\d{2})(\d{2})-(\d+)/);
+    return{path:x.path,file:(mat&&carg&&dm)?cleanCliente(carg.replace(/-/g," "))+"_"+mat+"_"+fmtFile(dm[1],dm[2],dm[3])+".pdf":f.split("__")[0]+".pdf",orig:(orig||"").replace(/-/g," "),fecha:dm?dm[3]+"/"+dm[2]+"/"+dm[1]:"",orden:dm?dm[1]+dm[2]+dm[3]+dm[4]:"",no:dm?"DC-"+dm[1]+dm[2]+dm[3]+"-"+dm[4]:base,mat:mat||"",carg:(carg||"").replace(/-/g," "),dest:(dest||"").replace(/-/g," ")};
   }).sort((a,b)=>b.orden.localeCompare(a.orden));
 }
 async function arcBlob(path){
@@ -546,9 +556,9 @@ function renderArchive(){
 function paintList(){
   const el=$("#alist");if(!el||!arcList)return;
   const q=norm($("#archivo").dataset.q||"").replace(/\s+/g," ").trim();
-  const l=arcList.filter(x=>!q||q.split(" ").every(w=>norm([x.fecha,x.no,x.mat,x.carg,x.dest].join(" ")).includes(w)));
+  const l=arcList.filter(x=>!q||q.split(" ").every(w=>norm([x.fecha,x.no,x.mat,x.carg,x.dest,x.orig].join(" ")).includes(w)));
   if(!arcList.length){el.innerHTML='<p class="opt">Todavía no hay documentos en el archivo. Se guardan solos al crear cada documento.</p>';return}
-  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.dest?" → "+esc(x.dest):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button></span></div>`).join("");
+  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.orig||x.dest?" · "+esc(x.orig||"?")+" → "+esc(x.dest||"?"):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button></span></div>`).join("");
   el.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",async()=>{
     const x=arcList[+b.dataset.i],t=$("#atoast");b.disabled=true;
     try{
@@ -570,7 +580,7 @@ function showTab(tb){
 }
 async function sharePdf(){
   const t=$("#toast");if(!lastPdf)return;
-  const file=new File([lastPdf.blob],lastPdf.name,{type:"application/pdf"});
+  const file=new File([lastPdf.blob],lastPdf.nice,{type:"application/pdf"});
   try{
     if(navigator.canShare&&navigator.canShare({files:[file]}))await navigator.share({files:[file],title:"Documento de control "+lastPdf.no});
     else if(navigator.share)await navigator.share({title:"Documento de control "+lastPdf.no,url:lastPdf.url});
@@ -655,6 +665,8 @@ function showShare(){
   const a=$(".actions:last-of-type")||$("#toast").parentNode;if($("#share"))return;
   const b=document.createElement("button");b.className="btn pri";b.type="button";b.id="share";b.textContent="Enviar al chófer (WhatsApp…)";b.addEventListener("click",sharePdf);
   $("#toast").parentNode.prepend(b);
+  const d=document.createElement("button");d.className="btn";d.type="button";d.id="dlpdf";d.textContent="Descargar PDF";
+  d.addEventListener("click",async()=>{try{await saveBlob(lastPdf.nice,lastPdf.blob)}catch(e){}});b.after(d);
 }
 async function createPdf(){
   const {E}=validate();const t=$("#toast");
@@ -662,7 +674,7 @@ async function createPdf(){
   if(!ghOk()){t.style.color="var(--err)";t.textContent="Escribe tu usuario de GitHub en el recuadro del QR antes de crear el PDF.";$("#f-gh")?.focus();return}
   let doc;try{doc=buildPdf()}catch(err){t.style.color="var(--err)";t.textContent="No se pudo generar el PDF: "+err.message;return}
   const blob=doc.output("blob"),name=pdfName(),url=ghUrl();
-  lastPdf={blob,name,url,no:docNo};
+  lastPdf={blob,name,nice:niceName(),url,no:docNo};
   if(!inClaude()&&GH.token){
     const nx=$("#next");nx.disabled=true;
     try{
