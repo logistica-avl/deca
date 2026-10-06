@@ -137,6 +137,16 @@ td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertic
 th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .tw{overflow-x:auto}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line)}
+.tab{font:700 .9rem var(--f-body);background:none;border:0;border-bottom:3px solid transparent;padding:8px 12px;color:var(--muted);cursor:pointer}
+.tab[aria-pressed="true"]{color:var(--ink);border-color:var(--accent)}
+#nuevo{display:flex;flex-direction:column;gap:18px}
+.arow{display:grid;grid-template-columns:1fr auto;grid-template-areas:"d b" "m m";gap:6px 10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.arow .d{grid-area:d}.arow .m{grid-area:m}.arow .b{grid-area:b}
+.arow .plate{white-space:nowrap}
+.arow .d{font:700 .8rem var(--f-mono);font-variant-numeric:tabular-nums}
+.arow .m{min-width:0;overflow-wrap:anywhere;font-size:.88rem}
+.arow .b{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .toast{font-size:.88rem;color:var(--ok);font-weight:600}
 .qrbox{display:flex;gap:18px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:14px}
 .qrbox canvas{background:#fff;border-radius:6px;max-width:100%;height:auto;image-rendering:pixelated}
@@ -154,6 +164,9 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
     </div>
     <div class="docno" id="docno"></div>
   </header>
+  <nav class="tabs" id="tabs" hidden><button type="button" class="tab" data-tab="nuevo" aria-pressed="true">Nuevo documento</button><button type="button" class="tab" data-tab="archivo" aria-pressed="false">Archivo</button></nav>
+  <div class="panel" id="archivo" hidden></div>
+  <div id="nuevo">
 
   <div class="notice" id="demo">Formulario rellenado con datos de ejemplo. Bórralos y pon los tuyos. <button class="btn sm ghost" id="clear" type="button">Vaciar formulario</button></div>
 
@@ -172,6 +185,7 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
       <button class="btn" type="button" id="prev">← Volver</button>
       <button class="btn pri" type="button" id="next">Siguiente →</button>
     </div>
+  </div>
   </div>
 </div>
 
@@ -352,7 +366,7 @@ function renderSummary(){
   ${!inClaude()&&GH.token?`<p style="margin:0;font-size:.88rem"><b style="color:var(--ok)">Subida automática activada.</b> Pulsa <b>Crear documento (PDF)</b>: se sube solo, espera a que el QR funcione y te deja enviarlo. <button class="btn sm ghost" type="button" id="tokdel">Quitar clave</button></p>`:`${inClaude()?`<p style="margin:0;font-size:.86rem" class="notice">Para que se suba solo, usa la app desde <b>${esc(GH.user.toLowerCase())}.github.io/deca/app.html</b>.</p>`:`<details class="f" ${GH.token?"":"open"}><summary style="cursor:pointer;font-weight:600;font-size:.88rem">Activar subida automática (una vez por dispositivo)</summary>
    <ol style="margin:6px 0;padding-left:18px;font-size:.84rem;display:flex;flex-direction:column;gap:3px">
     <li>En GitHub: tu foto → <b>Settings</b> → <b>Developer settings</b> → <b>Personal access tokens</b> → <b>Fine-grained tokens</b> → <b>Generate new token</b>.</li>
-    <li>Nombre: <b>deca</b>. Caducidad: <b>1 año</b>. Repository access: <b>Only select repositories</b> → <b>deca</b>.</li>
+    <li>Nombre: <b>deca</b>. Caducidad: <b>1 año</b>. Repository access: <b>Only select repositories</b> → <b>deca</b> y <b>deca-archivo</b>.</li>
     <li>Permissions → Repository permissions → <b>Contents</b>: <b>Read and write</b>. Pulsa <b>Generate token</b> y cópialo.</li>
    </ol>
    <label class="l" for="f-tok">Clave de GitHub (token)</label><input id="f-tok" type="password" autocomplete="off" placeholder="github_pat_…"><div class="msg i">Se guarda solo en este dispositivo.</div></details>`}
@@ -471,15 +485,16 @@ async function saveBlob(name,blob){
   const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function ghUpload(blob,name){
+let arcErr="";
+async function ghUpload(blob,name,repo="deca"){
   const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)});
-  const api="https://api.github.com/repos/"+GH.user+"/deca/contents/"+encodeURIComponent(name);
+  const api="https://api.github.com/repos/"+GH.user+"/"+repo+"/contents/"+name.split("/").map(encodeURIComponent).join("/");
   const hdr={Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json"};
   let sha;try{const g=await fetch(api,{headers:hdr,cache:"no-store"});if(g.ok)sha=(await g.json()).sha}catch(e){}
   const r=await fetch(api,{method:"PUT",headers:hdr,body:JSON.stringify(Object.assign({message:"Documento "+name,content:b64},sha?{sha}:{}))});
   if(r.ok)return;
   if(r.status===401)throw new Error("La clave de GitHub no es correcta o ha caducado.");
-  if(r.status===403||r.status===404)throw new Error("La clave de GitHub no tiene permiso para escribir en el repositorio deca.");
+  if(r.status===403||r.status===404)throw new Error("La clave de GitHub no tiene permiso para escribir en el repositorio "+repo+".");
   throw new Error("GitHub respondió con error "+r.status+".");
 }
 async function waitLive(url,onTick){
@@ -487,6 +502,66 @@ async function waitLive(url,onTick){
   return false;
 }
 let lastPdf=null;
+const slug=s=>(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30);
+function arcPath(){
+  const d=S.fecha||today,y=d.slice(0,4),m=d.slice(5,7);
+  const dest=S.entregas.map(e=>destOf(e).pob).filter(Boolean)[0]||"";
+  return y+"/"+m+"/"+pdfName().replace(/\.pdf$/,"")+"__"+slug(S.veh.tractora.toUpperCase())+"__"+slug(S.cargador.nombre)+"__"+slug(dest)+".pdf";
+}
+const ghHdr=()=>({Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json"});
+let arcList=null;
+async function loadArchive(){
+  const r=await fetch("https://api.github.com/repos/"+GH.user+"/deca-archivo/git/trees/HEAD?recursive=1",{headers:ghHdr(),cache:"no-store"});
+  if(r.status===401)throw new Error("La clave de GitHub no es correcta o ha caducado.");
+  if(r.status===404)throw new Error("No encuentro el repositorio deca-archivo, o la clave no tiene permiso para leerlo.");
+  if(r.status===409)return[];
+  if(!r.ok)throw new Error("GitHub respondió con error "+r.status+".");
+  const j=await r.json();
+  return j.tree.filter(x=>x.type==="blob"&&/DC-\d{8}-.*\.pdf$/.test(x.path)).map(x=>{
+    const f=x.path.split("/").pop().replace(/\.pdf$/,""),[base,mat,carg,dest]=f.split("__"),dm=base.match(/DC-(\d{4})(\d{2})(\d{2})-(\d+)/);
+    return{path:x.path,file:f.split("__")[0]+".pdf",fecha:dm?dm[3]+"/"+dm[2]+"/"+dm[1]:"",orden:dm?dm[1]+dm[2]+dm[3]+dm[4]:"",no:dm?"DC-"+dm[1]+dm[2]+dm[3]+"-"+dm[4]:base,mat:mat||"",carg:(carg||"").replace(/-/g," "),dest:(dest||"").replace(/-/g," ")};
+  }).sort((a,b)=>b.orden.localeCompare(a.orden));
+}
+async function arcBlob(path){
+  const r=await fetch("https://api.github.com/repos/"+GH.user+"/deca-archivo/contents/"+path.split("/").map(encodeURIComponent).join("/"),{headers:{Authorization:"Bearer "+GH.token,Accept:"application/vnd.github.raw"},cache:"no-store"});
+  if(!r.ok)throw new Error("No se pudo descargar ("+r.status+").");
+  return new Blob([await r.arrayBuffer()],{type:"application/pdf"});
+}
+function renderArchive(){
+  const box=$("#archivo");
+  if(!GH.token){box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año.</p><div class="notice">Para ver el archivo, activa primero la subida automática con tu clave de GitHub (en el paso Resumen de un documento nuevo).</div>`;return}
+  box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año. Solo tú puedes verlas.</p>
+  <div class="grid"><div class="f full"><label class="l" for="f-buscar">Buscar <span class="opt">(fecha, nº, matrícula, cliente o destino)</span></label><input id="f-buscar" type="search" placeholder="ej. 1234BCD o 03/10/2026" value="${esc(box.dataset.q||"")}"></div></div>
+  <div id="alist"><p class="opt">Cargando…</p></div><span class="toast" id="atoast"></span>`;
+  $("#f-buscar").addEventListener("input",e=>{box.dataset.q=e.target.value;paintList()});
+  if(arcList)paintList();
+  loadArchive().then(l=>{arcList=l;paintList()}).catch(e=>{$("#alist").innerHTML=`<div class="notice e">${esc(e.message)}</div>`});
+}
+function paintList(){
+  const el=$("#alist");if(!el||!arcList)return;
+  const q=norm($("#archivo").dataset.q||"").replace(/\s+/g," ").trim();
+  const l=arcList.filter(x=>!q||q.split(" ").every(w=>norm([x.fecha,x.no,x.mat,x.carg,x.dest].join(" ")).includes(w)));
+  if(!arcList.length){el.innerHTML='<p class="opt">Todavía no hay documentos en el archivo. Se guardan solos al crear cada documento.</p>';return}
+  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.dest?" → "+esc(x.dest):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button></span></div>`).join("");
+  el.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",async()=>{
+    const x=arcList[+b.dataset.i],t=$("#atoast");b.disabled=true;
+    try{
+      if(!x.blob){t.style.color="var(--muted)";t.textContent="Descargando "+x.no+"…";x.blob=await arcBlob(x.path)}
+      if(b.dataset.a==="dl"){await saveBlob(x.file,x.blob);t.style.color="";t.textContent=x.file+" guardado."}
+      else{const f=new File([x.blob],x.file,{type:"application/pdf"});
+        if(navigator.canShare&&navigator.canShare({files:[f]})){t.textContent="";await navigator.share({files:[f],title:"Documento de control "+x.no})}
+        else{await saveBlob(x.file,x.blob);t.style.color="";t.textContent="Este dispositivo no permite compartir: se ha descargado "+x.file+"."}}
+    }catch(e){if(e&&e.name!=="AbortError"){t.style.color="var(--err)";t.textContent=e.message||"No se pudo completar."}}
+    finally{b.disabled=false}
+  }));
+}
+function showTab(tb){
+  document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tab===tb));
+  $("#nuevo").hidden=tb!=="nuevo";$("#archivo").hidden=tb!=="archivo";
+  $("#docno").style.visibility=tb==="nuevo"?"visible":"hidden";
+  document.querySelector("h1").textContent=tb==="nuevo"?"Nuevo documento de control":"Archivo de documentos";
+  if(tb==="archivo")renderArchive();
+}
 async function sharePdf(){
   const t=$("#toast");if(!lastPdf)return;
   const file=new File([lastPdf.blob],lastPdf.name,{type:"application/pdf"});
@@ -586,9 +661,10 @@ async function createPdf(){
     try{
       t.style.color="var(--muted)";t.textContent="Subiendo el PDF a GitHub…";
       await ghUpload(blob,name);
+      let arcOk=true;try{t.textContent="Guardando copia en el archivo…";await ghUpload(blob,arcPath(),"deca-archivo")}catch(e){arcOk=false;arcErr=e.message}
       const ok=await waitLive(url,i=>{t.style.color="var(--muted)";t.textContent="PDF subido. Esperando a que el QR se active… ("+(i*10)+" s)"});
       t.style.color=ok?"":"var(--amber)";
-      t.innerHTML=ok?"✓ QR activo. Ya puedes enviar el documento.":"PDF subido, pero aún no responde. Prueba el QR en un par de minutos.";
+      t.innerHTML=(ok?"✓ QR activo. Ya puedes enviar el documento.":"PDF subido, pero aún no responde. Prueba el QR en un par de minutos.")+(arcOk?" Copia guardada en el archivo.":"<br><span style=\"color:var(--err)\">No se guardó la copia en el archivo: "+esc(arcErr)+"</span>");
       showShare();
     }catch(e){t.style.color="var(--err)";t.textContent=e.message||"No se pudo subir el PDF."}
     finally{nx.disabled=false}
@@ -599,6 +675,7 @@ async function createPdf(){
 }
 (()=>{const h=location.hash.slice(1);
   if(h.length>30){try{const a=JSON.parse(fromB64u(h));if(Array.isArray(a)&&a[0]===1){showVerify(a);return}}catch(e){}}
+  if(!inClaude()){$("#tabs").hidden=false;document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)))}
   draw();})();
 </script>
 
