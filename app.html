@@ -190,7 +190,7 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 </div>
 
 <script>
-const STEPS=["Partes","Entregas","Vehículo","Fechas","Resumen"];
+const STEPS=["Partes","Fechas","Entregas","Vehículo","Resumen"];
 const PROV={"01":"Álava","02":"Albacete","03":"Alicante","04":"Almería","05":"Ávila","06":"Badajoz","07":"Baleares","08":"Barcelona","09":"Burgos","10":"Cáceres","11":"Cádiz","12":"Castellón","13":"Ciudad Real","14":"Córdoba","15":"A Coruña","16":"Cuenca","17":"Girona","18":"Granada","19":"Guadalajara","20":"Gipuzkoa","21":"Huelva","22":"Huesca","23":"Jaén","24":"León","25":"Lleida","26":"La Rioja","27":"Lugo","28":"Madrid","29":"Málaga","30":"Murcia","31":"Navarra","32":"Ourense","33":"Asturias","34":"Palencia","35":"Las Palmas","36":"Pontevedra","37":"Salamanca","38":"S.C. Tenerife","39":"Cantabria","40":"Segovia","41":"Sevilla","42":"Soria","43":"Tarragona","44":"Teruel","45":"Toledo","46":"Valencia","47":"Valladolid","48":"Bizkaia","49":"Zamora","50":"Zaragoza","51":"Ceuta","52":"Melilla"};
 const today=new Date().toISOString().slice(0,10);
 const blankParty=()=>({nombre:"",nif:"",dom:"",cp:"",pob:""});
@@ -271,16 +271,16 @@ function validate(){
     if(!e.peso||!(+e.peso>0))E.push({p:b+".peso",m:"Indica un peso mayor que 0"});
     if(!e.fecha)E.push({p:b+".fecha",m:"Falta la fecha prevista de descarga"});
     if(!e.hora)E.push({p:b+".hora",m:"Falta la hora prevista de descarga"});
-    if(e.fecha&&S.fecha&&(e.fecha+" "+(e.hora||"99:99"))<(S.fecha+" "+(S.hora||"00:00")))W.push({p:b+".fecha",m:"Entrega #"+(i+1)+" · La descarga es anterior a la recepción de la mercancía"});
+    if(e.fecha&&S.fecha&&(e.fecha+" "+(e.hora||"99:99"))<(S.fecha+" "+(S.hora||"00:00")))W.push({p:b+".fecha",m:"Entrega #"+(i+1)+" · La descarga es anterior a la hora prevista de carga"});
   });
   const t=checkPlate(S.veh.tractora);if(!S.veh.tractora.trim())E.push({p:"veh.tractora",m:"Falta la matrícula de la cabeza tractora"});else if(t.warn)W.push({p:"veh.tractora",m:"Cabeza tractora · "+t.warn});
   ["rem","rem2"].forEach(k=>{if(S.veh[k].trim()){const r=checkPlate(S.veh[k]);if(r.warn&&!/^R/i.test(S.veh[k]))W.push({p:"veh."+k,m:"Remolque · "+r.warn})}});
   if(!S.fecha)E.push({p:"fecha",m:"Falta la fecha de inicio"});
   const pr=String(S.precio??"").replace(",",".");if(!pr.trim())E.push({p:"precio",m:"Indica el precio del transporte"});else if(!(+pr>=0))E.push({p:"precio",m:"El precio debe ser un número"});
-  if(!S.hora)E.push({p:"hora",m:"Falta la hora de recepción de la mercancía"});
+  if(!S.hora)E.push({p:"hora",m:"Falta la hora prevista de carga"});
   return{E,W};
 }
-const stepOf=p=>p.startsWith("cargador")||p.startsWith("transportista")?0:p.startsWith("origen")||p.startsWith("entregas")?1:p.startsWith("veh")?2:3;
+const stepOf=p=>p.startsWith("cargador")||p.startsWith("transportista")?0:p.startsWith("origen")||p.startsWith("entregas")?2:p.startsWith("veh")?3:1;
 
 /* ---------- Render ---------- */
 const $=s=>document.querySelector(s);
@@ -308,7 +308,7 @@ function renderStep(){
     v.innerHTML=`<h2>Partes del contrato</h2><p class="sub">${meT?"Tú eres el transportista: indica quién te contrata.":"Tú eres el cargador: indica quién hace el transporte."}</p>
     <h3>Cargador contractual</h3>${partyFields("cargador")}
     <h3>Transportista efectivo</h3>${partyFields("transportista")}`;
-  }else if(step===1){
+  }else if(step===2){
     v.innerHTML=`<h2>Origen y entregas</h2><p class="sub">Lugar de carga y cada punto de descarga con su mercancía.</p>
     <h3>Lugar de carga (origen)</h3>${check("origenIgual","El origen es el domicilio del cargador contractual")}
     ${S.origenIgual?"":partyFields("origen",{nifReq:false,nameReq:false})}
@@ -325,15 +325,15 @@ function renderStep(){
       ${[["kg","kilogramos (kg)"],["t","toneladas (t)"],["m3","metros cúbicos (m³)"],["l","litros (l)"],["uds","unidades / bultos"]].map(([k,t])=>`<option value="${k}" ${e.unidad===k?"selected":""}>${t}</option>`).join("")}</select><div class="msg"></div></div></div>
     </div>`).join("")}
     <div><button class="btn" type="button" id="add">+ Añadir otra entrega</button></div>`;
-  }else if(step===2){
+  }else if(step===3){
     v.innerHTML=`<h2>Vehículo</h2><p class="sub">Matrículas de los vehículos que hacen el transporte.</p>
     <div class="grid">${field("veh.tractora","Matrícula de la cabeza tractora",{req:true,mono:true,ph:"1234BCD"})}<div></div>
     ${field("veh.rem","Matrícula del remolque",{mono:true,ph:"R1234BCD"})}${field("veh.rem2","Matrícula del remolque 2",{mono:true})}
     ${field("veh.conductor","Conductor",{full:true,ph:"Nombre y apellidos (si no, queda pendiente en muelle)"})}
     ${field("veh.aut","Autorización especial de circulación",{full:true,ph:"Nº de autorización, si el transporte la necesita"})}</div>`;
-  }else if(step===3){
-    v.innerHTML=`<h2>Fechas, precio y observaciones</h2><p class="sub">Cuándo recibes la mercancía y precio del transporte. La descarga prevista va en cada entrega (paso 2).</p>
-    <div class="grid">${field("fecha","Fecha de inicio",{req:true,type:"date"})}${field("hora","Hora de recepción de la mercancía",{req:true,type:"time"})}
+  }else if(step===1){
+    v.innerHTML=`<h2>Fechas, precio y observaciones</h2><p class="sub">Cuándo se carga la mercancía y precio del transporte. La descarga prevista va en cada entrega (paso 3).</p>
+    <div class="grid">${field("fecha","Fecha de inicio",{req:true,type:"date"})}${field("hora","Hora prevista de carga",{req:true,type:"time"})}
     ${field("precio","Precio del transporte (€)",{req:true,type:"number",ph:"0,00",hint:"Si supera 150 € se imprime en el documento."})}</div>
     <div class="f"><label class="l" for="obs">Observaciones generales <span class="opt">(opcional)</span></label><textarea id="obs" data-p="obs" placeholder="Otras notas sobre el transporte">${esc(S.obs)}</textarea></div>`;
   }else{
@@ -363,7 +363,7 @@ function renderSummary(){
     ${S.entregas.map((e,i)=>{const d=destOf(e);return `<tr><td>${i+1}</td><td>${esc(d.nombre)||"—"}<br><span class="opt">${esc(d.cp)} ${esc(d.pob)}${e.fecha?" · descarga prevista "+fmtD(e.fecha)+" "+esc(e.hora||""):""}</span></td><td>${esc(e.merc)}</td><td class="num">${esc(e.peso)} ${unitTxt[e.unidad]}</td></tr>`}).join("")}
     </tbody></table></div></section>
     <section><h4>Vehículo</h4><p>Tractora: <span class="plate">${esc(S.veh.tractora.toUpperCase())||"—"}</span></p>${S.veh.rem?`<p>Remolque: <span class="plate">${esc(S.veh.rem.toUpperCase())}</span></p>`:""}${S.veh.rem2?`<p>Remolque 2: <span class="plate">${esc(S.veh.rem2.toUpperCase())}</span></p>`:""}<p>Conductor: ${esc(S.veh.conductor)||"Sin asignar (pendiente en muelle)"}</p><p>${S.veh.aut?"Autorización especial: "+esc(S.veh.aut):"No requiere autorización especial de circulación"}</p></section>
-    <section><h4>Fechas y precio</h4><p>Inicio: ${fmtD(S.fecha)||"—"} · recepción de la mercancía ${esc(S.hora)||"—"}</p><p>Precio: ${S.precio?fmtEur(precioNum())+(precioVa()?"":' <span class="opt">(no se imprime: no supera 150 €)</span>'):"—"}</p>${S.obs?`<p style="margin-top:6px">${esc(S.obs)}</p>`:""}</section>
+    <section><h4>Fechas y precio</h4><p>Inicio: ${fmtD(S.fecha)||"—"} · carga prevista ${esc(S.hora)||"—"}</p><p>Precio: ${S.precio?fmtEur(precioNum())+(precioVa()?"":' <span class="opt">(no se imprime: no supera 150 €)</span>'):"—"}</p>${S.obs?`<p style="margin-top:6px">${esc(S.obs)}</p>`:""}</section>
   </div>
   ${E.length?"":`<div class="qrbox">${ghOk()?`<canvas id="qrc" width="300" height="300" aria-label="Código QR del documento"></canvas>`:""}<div><h4 style="margin:0;font:700 .72rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Código QR del documento</h4>
   <div class="f"><label class="l" for="f-gh">Tu usuario de GitHub</label><input id="f-gh" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ej. transportesgarcia" value="${esc(GH.user)}">${GH.user&&!ghOk()?`<div class="msg e">El usuario solo puede tener letras, números y guiones.</div>`:""}</div>
@@ -636,7 +636,7 @@ function buildPdf(){
   if(S.veh.rem)vl.push("Remolque: "+S.veh.rem.toUpperCase());if(S.veh.rem2)vl.push("Remolque 2: "+S.veh.rem2.toUpperCase());
   vl.push("Conductor: "+(S.veh.conductor||"Sin asignar"));
   vl.push(S.veh.aut?"Autorización especial: "+S.veh.aut:"No requiere autorización especial");
-  const fl=["Inicio: "+fmtD(S.fecha),"Hora de recepción de la mercancía: "+(S.hora||"—")];
+  const fl=["Inicio: "+fmtD(S.fecha),"Hora prevista de carga: "+(S.hora||"—")];
   const ds=S.entregas.filter(e=>e.fecha).map(e=>e.fecha+" "+(e.hora||"")).sort();if(ds.length===1){const [d,t]=ds[0].split(" ");fl.push("Descarga prevista: "+fmtD(d)+" "+t)}else if(ds.length>1)fl.push("Descargas previstas: ver tabla de entregas");if(precioVa())fl.push("Precio del transporte: "+fmtEur(precioNum()));
   const hv=box(M,y,half,"5. Vehículo",vl),hf=box(M+half+4,y,half,precioVa()?"6. Fechas y precio":"6. Fechas",fl);
   y+=Math.max(hv,hf)+4;
