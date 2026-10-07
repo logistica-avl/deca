@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><link rel="apple-touch-icon" href="deca-icono-avlog.png"><link rel="icon" type="image/png" href="deca-icono-avlog.png"><meta name="apple-mobile-web-app-title" content="DeCA"><meta name="application-name" content="DeCA"><meta name="theme-color" content="#0f5563"><style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><link rel="apple-touch-icon" href="icono.png"><link rel="icon" type="image/png" href="deca-icono-avlog.png"><meta name="apple-mobile-web-app-title" content="DeCA"><meta name="application-name" content="DeCA"><meta name="theme-color" content="#0f5563"><style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
 <title>Documento de Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -170,6 +170,8 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 
   <div class="notice" id="demo">Formulario rellenado con datos de ejemplo. Bórralos y pon los tuyos. <button class="btn sm ghost" id="clear" type="button">Vaciar formulario</button></div>
 
+  <div class="panel" id="ghpanel"></div>
+
   <div class="panel">
     <h3>Situación profesional</h3>
     <div class="roles">
@@ -275,7 +277,7 @@ function validate(){
   });
   const t=checkPlate(S.veh.tractora);if(!S.veh.tractora.trim())E.push({p:"veh.tractora",m:"Falta la matrícula de la cabeza tractora"});else if(t.warn)W.push({p:"veh.tractora",m:"Cabeza tractora · "+t.warn});
   ["rem","rem2"].forEach(k=>{if(S.veh[k].trim()){const r=checkPlate(S.veh[k]);if(r.warn&&!/^R/i.test(S.veh[k]))W.push({p:"veh."+k,m:"Remolque · "+r.warn})}});
-  if(!S.fecha)E.push({p:"fecha",m:"Falta la fecha de inicio"});
+  if(!S.fecha)E.push({p:"fecha",m:"Falta la fecha de carga"});
   const pr=String(S.precio??"").replace(",",".");if(!pr.trim())E.push({p:"precio",m:"Indica el precio del transporte"});else if(!(+pr>=0))E.push({p:"precio",m:"El precio debe ser un número"});
   if(!S.hora)E.push({p:"hora",m:"Falta la hora prevista de carga"});
   return{E,W};
@@ -294,8 +296,8 @@ function field(p,label,{req=false,full=false,ph="",mono=false,type="text",hint="
   <input id="${id}" data-p="${p}" type="${type}" ${mono?'class="mono"':""} ${type==="number"?'min="0" step="any" inputmode="decimal"':""} placeholder="${esc(ph)}" value="${esc(get(p))}">
   <div class="msg" data-m="${p}">${hint}</div></div>`;
 }
-function partyFields(base,{nifReq=true,nameReq=true}={}){
-  return `<div class="grid">${field(base+".nombre","Nombre de empresa",{req:nameReq,full:true})}
+function partyFields(base,{nifReq=true,nameReq=true,nameLabel="Nombre de empresa"}={}){
+  return `<div class="grid">${field(base+".nombre",nameLabel,{req:nameReq,full:true})}
   ${field(base+".dom","Domicilio / Dirección",{ph:"Calle, número"})}${field(base+".cp","Código postal",{req:true,ph:"46000",mono:true})}
   ${field(base+".pob","Población",{req:true})}${field(base+".nif","NIF / CIF",{req:nifReq,mono:true,ph:"B12345674"})}</div>`;
 }
@@ -305,16 +307,16 @@ function renderStep(){
   const v=$("#view");
   if(step===0){
     const meT=S.role==="transportista";
-    v.innerHTML=`<h2>Partes del contrato</h2><p class="sub">${meT?"Tú eres el transportista: indica quién te contrata.":"Tú eres el cargador: indica quién hace el transporte."}</p>
-    <h3>Cargador contractual</h3>${partyFields("cargador")}
+    v.innerHTML=`<h2>Partes del contrato</h2>
+    <h3>Almacén de carga</h3>${partyFields("cargador")}
     <h3>Transportista efectivo</h3>${partyFields("transportista")}`;
   }else if(step===2){
-    v.innerHTML=`<h2>Origen y entregas</h2><p class="sub">Lugar de carga y cada punto de descarga con su mercancía.</p>
-    <h3>Lugar de carga (origen)</h3>${check("origenIgual","El origen es el domicilio del cargador contractual")}
+    v.innerHTML=`<h2>Origen y entregas</h2>
+    <h3>Lugar de carga (origen)</h3>${check("origenIgual","El origen es el almacén de carga")}
     ${S.origenIgual?"":partyFields("origen",{nifReq:false,nameReq:false})}
     ${S.entregas.map((e,i)=>`<div class="entrega"><div class="ehead"><b>Entrega #${i+1}${e.nombre?": "+esc(e.nombre):""}</b>${S.entregas.length>1?`<button class="btn sm ghost" type="button" data-del="${i}">Quitar</button>`:""}</div>
-      <h3>Lugar de descarga</h3>${check(`entregas.${i}.igual`,"El destino es igual que el cargador contractual")}
-      ${e.igual?"":partyFields(`entregas.${i}`,{nifReq:false,nameReq:false})}
+      <h3>Lugar de descarga</h3>${check(`entregas.${i}.igual`,"El destino es igual que el almacén de carga")}
+      ${e.igual?"":partyFields(`entregas.${i}`,{nifReq:false,nameReq:false,nameLabel:"Almacén de descarga"})}
       <h3>Descarga prevista</h3>
       <div class="grid">${field(`entregas.${i}.fecha`,"Fecha prevista de descarga",{req:true,type:"date"})}${field(`entregas.${i}.hora`,"Hora prevista de descarga",{req:true,type:"time"})}</div>
       <div class="f"><label class="l" for="t-${i}">Observaciones en destino <span class="opt">(opcional)</span></label><textarea id="t-${i}" data-p="entregas.${i}.obs" placeholder="Ej.: entregar en muelle 4, avisar a recepción">${esc(e.obs)}</textarea></div>
@@ -326,14 +328,14 @@ function renderStep(){
     </div>`).join("")}
     <div><button class="btn" type="button" id="add">+ Añadir otra entrega</button></div>`;
   }else if(step===3){
-    v.innerHTML=`<h2>Vehículo</h2><p class="sub">Matrículas de los vehículos que hacen el transporte.</p>
+    v.innerHTML=`<h2>Vehículo</h2>
     <div class="grid">${field("veh.tractora","Matrícula de la cabeza tractora",{req:true,mono:true,ph:"1234BCD"})}<div></div>
     ${field("veh.rem","Matrícula del remolque",{mono:true,ph:"R1234BCD"})}${field("veh.rem2","Matrícula del remolque 2",{mono:true})}
     ${field("veh.conductor","Conductor",{full:true,ph:"Nombre y apellidos (si no, queda pendiente en muelle)"})}
     ${field("veh.aut","Autorización especial de circulación",{full:true,ph:"Nº de autorización, si el transporte la necesita"})}</div>`;
   }else if(step===1){
-    v.innerHTML=`<h2>Fechas, precio y observaciones</h2><p class="sub">Cuándo se carga la mercancía y precio del transporte. La descarga prevista va en cada entrega (paso 3).</p>
-    <div class="grid">${field("fecha","Fecha de inicio",{req:true,type:"date"})}${field("hora","Hora prevista de carga",{req:true,type:"time"})}
+    v.innerHTML=`<h2>Fechas, precio y observaciones</h2>
+    <div class="grid">${field("fecha","Fecha de carga",{req:true,type:"date"})}${field("hora","Hora prevista de carga",{req:true,type:"time"})}
     ${field("precio","Precio del transporte (€)",{req:true,type:"number",ph:"0,00",hint:"Si supera 150 € se imprime en el documento."})}</div>
     <div class="f"><label class="l" for="obs">Observaciones generales <span class="opt">(opcional)</span></label><textarea id="obs" data-p="obs" placeholder="Otras notas sobre el transporte">${esc(S.obs)}</textarea></div>`;
   }else{
@@ -350,6 +352,26 @@ const unitTxt={kg:"kg",t:"t",m3:"m³",l:"l",uds:"uds"};
 function destOf(e){return e.igual?S.cargador:e}
 function origOf(){return S.origenIgual?S.cargador:S.origen}
 function pBlock(o){return `<p><b>${esc(o.nombre)||"—"}</b></p><p>${esc((o.nif||"").toUpperCase())||"—"}</p><p>${esc(o.dom)||"—"}</p><p>${esc(o.cp)} ${esc(o.pob)}</p>`}
+function renderGh(){
+  const box=$("#ghpanel");if(!box)return;
+  const on=!inClaude()&&GH.token;
+  box.innerHTML=`<h3>GitHub · subida automática</h3>
+  <div class="grid"><div class="f"><label class="l" for="f-gh">Tu usuario de GitHub</label><input id="f-gh" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ej. transportesgarcia" value="${esc(GH.user)}"><div class="msg ${GH.user&&!ghOk()?"e":"i"}">${GH.user&&!ghOk()?"El usuario solo puede tener letras, números y guiones.":""}</div></div>
+  ${inClaude()?`<div class="f"><p class="notice" style="margin:0;font-size:.86rem">Para que se suba solo, usa la app desde <b>${esc((GH.user||"tuusuario").toLowerCase())}.github.io/deca/app.html</b>.</p></div>`:
+   on?`<div class="f" style="justify-content:center"><p style="margin:0;font-size:.9rem"><b style="color:var(--ok)">✓ Clave guardada en este dispositivo.</b></p><div><button class="btn sm ghost" type="button" id="tokdel">Quitar clave</button></div></div>`:
+   `<div class="f"><label class="l" for="f-tok">Clave de GitHub (token)</label><input id="f-tok" type="password" autocomplete="off" placeholder="github_pat_…"><div class="msg i">Se guarda solo en este dispositivo.</div></div>`}</div>
+  ${!inClaude()&&!on?`<details><summary style="cursor:pointer;font-weight:600;font-size:.86rem">Cómo crear la clave (una vez por dispositivo)</summary>
+   <ol style="margin:6px 0 0;padding-left:18px;font-size:.84rem;display:flex;flex-direction:column;gap:3px">
+    <li>En GitHub: tu foto → <b>Settings</b> → <b>Developer settings</b> → <b>Personal access tokens</b> → <b>Fine-grained tokens</b> → <b>Generate new token</b>.</li>
+    <li>Nombre: <b>deca</b>. Caducidad: <b>1 año</b>. Repository access: <b>Only select repositories</b> → <b>deca</b> y <b>deca-archivo</b>.</li>
+    <li>Permissions → Repository permissions → <b>Contents</b>: <b>Read and write</b>. Pulsa <b>Generate token</b> y cópialo.</li>
+   </ol></details>`:""}`;
+  let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}
+    const m=box.querySelector(".msg");const bad=GH.user&&!ghOk();m.className="msg "+(bad?"e":"i");m.textContent=bad?"El usuario solo puede tener letras, números y guiones.":"";
+    clearTimeout(tm);tm=setTimeout(()=>{if(step===4)renderSummary()},400)});
+  $("#f-tok")?.addEventListener("change",e=>{const v=e.target.value.trim();if(!v)return;GH.token=v;try{localStorage.setItem("dc-token",v)}catch(x){}renderGh();if(step===4)renderSummary()});
+  $("#tokdel")?.addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderGh();if(step===4)renderSummary()});
+}
 function renderSummary(){
   const {E,W}=validate();
   $("#view").innerHTML=`<h2>Resumen del documento</h2>
@@ -366,26 +388,16 @@ function renderSummary(){
     <section><h4>Fechas y precio</h4><p>Inicio: ${fmtD(S.fecha)||"—"} · carga prevista ${esc(S.hora)||"—"}</p><p>Precio: ${S.precio?fmtEur(precioNum())+(precioVa()?"":' <span class="opt">(no se imprime: no supera 150 €)</span>'):"—"}</p>${S.obs?`<p style="margin-top:6px">${esc(S.obs)}</p>`:""}</section>
   </div>
   ${E.length?"":`<div class="qrbox">${ghOk()?`<canvas id="qrc" width="300" height="300" aria-label="Código QR del documento"></canvas>`:""}<div><h4 style="margin:0;font:700 .72rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Código QR del documento</h4>
-  <div class="f"><label class="l" for="f-gh">Tu usuario de GitHub</label><input id="f-gh" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ej. transportesgarcia" value="${esc(GH.user)}">${GH.user&&!ghOk()?`<div class="msg e">El usuario solo puede tener letras, números y guiones.</div>`:""}</div>
   ${ghOk()?`<p style="margin:0;font-size:.88rem"><b style="color:var(--ok)">El QR lleva a:</b></p><pre>${esc(ghUrl())}</pre>
-  ${!inClaude()&&GH.token?`<p style="margin:0;font-size:.88rem"><b style="color:var(--ok)">Subida automática activada.</b> Pulsa <b>Crear documento (PDF)</b>: se sube solo, espera a que el QR funcione y te deja enviarlo. <button class="btn sm ghost" type="button" id="tokdel">Quitar clave</button></p>`:`${inClaude()?`<p style="margin:0;font-size:.86rem" class="notice">Para que se suba solo, usa la app desde <b>${esc(GH.user.toLowerCase())}.github.io/deca/app.html</b>.</p>`:`<details class="f" ${GH.token?"":"open"}><summary style="cursor:pointer;font-weight:600;font-size:.88rem">Activar subida automática (una vez por dispositivo)</summary>
-   <ol style="margin:6px 0;padding-left:18px;font-size:.84rem;display:flex;flex-direction:column;gap:3px">
-    <li>En GitHub: tu foto → <b>Settings</b> → <b>Developer settings</b> → <b>Personal access tokens</b> → <b>Fine-grained tokens</b> → <b>Generate new token</b>.</li>
-    <li>Nombre: <b>deca</b>. Caducidad: <b>1 año</b>. Repository access: <b>Only select repositories</b> → <b>deca</b> y <b>deca-archivo</b>.</li>
-    <li>Permissions → Repository permissions → <b>Contents</b>: <b>Read and write</b>. Pulsa <b>Generate token</b> y cópialo.</li>
-   </ol>
-   <label class="l" for="f-tok">Clave de GitHub (token)</label><input id="f-tok" type="password" autocomplete="off" placeholder="github_pat_…"><div class="msg i">Se guarda solo en este dispositivo.</div></details>`}
   ${inClaude()?`<ol style="margin:0;padding-left:18px;font-size:.86rem;display:flex;flex-direction:column;gap:4px">
    <li>Pulsa <b>Crear documento (PDF)</b>. Se guarda como <b>${esc(pdfName())}</b>. No le cambies el nombre.</li>
    <li>Entra en <b>github.com/${esc(GH.user)}/deca</b> → <b>Add file</b> → <b>Upload files</b>, arrastra el PDF y pulsa <b>Commit changes</b>.</li>
    <li>En 1–2 minutos el QR ya funciona. Envía el PDF al chófer por WhatsApp.</li>
-  </ol>`:""}`}`:`<div class="notice e" style="margin:0"><b>Falta tu usuario de GitHub.</b> Escríbelo arriba para generar el QR y poder crear el PDF.</div>`}
+  </ol>`:""}`:`<div class="notice e" style="margin:0"><b>Falta tu usuario de GitHub.</b> Escríbelo arriba del todo para generar el QR y poder crear el PDF.</div>`}
   <div style="display:flex;flex-direction:row;flex-wrap:wrap;gap:8px">${ghOk()?`<button class="btn sm" type="button" id="qrdl">Descargar QR (PNG)</button>`:""}<button class="btn sm ghost" type="button" id="newdoc">Empezar otro documento</button></div></div></div>`}
   <div class="actions" style="justify-content:flex-start;align-items:center"><span class="toast" id="toast"></span></div>`;
   if(!E.length&&ghOk()){paintQr();$("#qrdl").addEventListener("click",downloadQr)}
-  if(!E.length){$("#f-tok")?.addEventListener("change",e=>{const v=e.target.value.trim();if(!v)return;GH.token=v;try{localStorage.setItem("dc-token",v)}catch(x){}renderSummary()});
-  $("#tokdel")?.addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderSummary()})}
-  if(!E.length){let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}clearTimeout(tm);tm=setTimeout(()=>{renderSummary();const f=$("#f-gh");if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},500)});$("#newdoc").addEventListener("click",()=>{freshDoc();step=0;draw();scrollTo({top:0})})}
+  if(!E.length){$("#newdoc").addEventListener("click",()=>{freshDoc();step=0;draw();scrollTo({top:0})})}
   $("#gofix")?.addEventListener("click",()=>{showErr=true;step=stepOf(E[0].p);draw()});
 }
 
@@ -548,7 +560,7 @@ async function arcBlob(path){
 }
 function renderArchive(){
   const box=$("#archivo");
-  if(!GH.token){box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año.</p><div class="notice">Para ver el archivo, activa primero la subida automática con tu clave de GitHub (en el paso Resumen de un documento nuevo).</div>`;return}
+  if(!GH.token){box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año.</p><div class="notice">Para ver el archivo, activa primero la subida automática con tu clave de GitHub (arriba del todo, en «Nuevo documento»).</div>`;return}
   box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año. Solo tú puedes verlas.</p>
   <div class="grid"><div class="f full"><label class="l" for="f-buscar">Buscar <span class="opt">(fecha, nº, matrícula, cliente o destino)</span></label><input id="f-buscar" type="search" placeholder="ej. 1234BCD o 03/10/2026" value="${esc(box.dataset.q||"")}"></div></div>
   <div id="alist"><p class="opt">Cargando…</p></div><span class="toast" id="atoast"></span>`;
@@ -674,7 +686,7 @@ function showShare(){
 async function createPdf(){
   const {E}=validate();const t=$("#toast");
   if(E.length){showErr=true;renderSummary();return}
-  if(!ghOk()){t.style.color="var(--err)";t.textContent="Escribe tu usuario de GitHub en el recuadro del QR antes de crear el PDF.";$("#f-gh")?.focus();return}
+  if(!ghOk()){t.style.color="var(--err)";t.textContent="Escribe tu usuario de GitHub arriba del todo antes de crear el PDF.";$("#f-gh")?.focus();return}
   let renum="";
   if(!inClaude()&&GH.token&&S.subidoSig&&S.subidoSig!==dataSig()){const old=docNo;newDoc();paintQr();renum="Has cambiado datos de un documento ya enviado ("+old+"): se crea uno nuevo, "+docNo+". ";}
   let doc;try{doc=buildPdf()}catch(err){t.style.color="var(--err)";t.textContent="No se pudo generar el PDF: "+err.message;return}
@@ -711,7 +723,7 @@ async function createPdf(){
   if(h.length>30){try{const a=JSON.parse(fromB64u(h));if(Array.isArray(a)&&a[0]===1){showVerify(a);return}}catch(e){}}
   if(!inClaude()){$("#tabs").hidden=false;document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)))}
   if(!inClaude()&&S.subidoSig){freshDoc();save()}
-  draw();})();
+  renderGh();draw();})();
 </script>
 
 </body></html>
