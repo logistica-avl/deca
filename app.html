@@ -355,6 +355,7 @@ function pBlock(o){return `<p><b>${esc(o.nombre)||"—"}</b></p><p>${esc((o.nif|
 function renderGh(){
   const box=$("#ghpanel");if(!box)return;
   const on=!inClaude()&&GH.token;
+  box.hidden=!!(on&&ghOk());if(box.hidden){box.innerHTML="";return}
   box.innerHTML=`<h3>GitHub · subida automática</h3>
   <div class="grid"><div class="f"><label class="l" for="f-gh">Tu usuario de GitHub</label><input id="f-gh" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ej. transportesgarcia" value="${esc(GH.user)}"><div class="msg ${GH.user&&!ghOk()?"e":"i"}">${GH.user&&!ghOk()?"El usuario solo puede tener letras, números y guiones.":""}</div></div>
   ${inClaude()?`<div class="f"><p class="notice" style="margin:0;font-size:.86rem">Para que se suba solo, usa la app desde <b>${esc((GH.user||"tuusuario").toLowerCase())}.github.io/deca/app.html</b>.</p></div>`:
@@ -563,7 +564,9 @@ function renderArchive(){
   if(!GH.token){box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año.</p><div class="notice">Para ver el archivo, activa primero la subida automática con tu clave de GitHub (arriba del todo, en «Nuevo documento»).</div>`;return}
   box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año. Solo tú puedes verlas.</p>
   <div class="grid"><div class="f full"><label class="l" for="f-buscar">Buscar <span class="opt">(fecha, nº, matrícula, cliente o destino)</span></label><input id="f-buscar" type="search" placeholder="ej. 1234BCD o 03/10/2026" value="${esc(box.dataset.q||"")}"></div></div>
-  <div id="alist"><p class="opt">Cargando…</p></div><span class="toast" id="atoast"></span>`;
+  <div id="alist"><p class="opt">Cargando…</p></div><span class="toast" id="atoast"></span>
+  <p class="opt" style="margin:8px 0 0">Conectado a GitHub como <b>${esc(GH.user)}</b>. <button class="btn sm ghost" type="button" id="tokdel2">Quitar clave de este dispositivo</button></p>`;
+  $("#tokdel2").addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderGh();showTab("nuevo")});
   $("#f-buscar").addEventListener("input",e=>{box.dataset.q=e.target.value;paintList()});
   if(arcList)paintList();
   loadArchive().then(l=>{arcList=l;paintList()}).catch(e=>{$("#alist").innerHTML=`<div class="notice e">${esc(e.message)}</div>`});
