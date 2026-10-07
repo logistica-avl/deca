@@ -150,9 +150,9 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 .toast{font-size:.88rem;color:var(--ok);font-weight:600}
 .qrbox{display:flex;gap:18px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:14px}
 .qrbox canvas{background:#fff;border-radius:6px;max-width:100%;height:auto;image-rendering:pixelated}
-.qrbox div{display:flex;flex-direction:column;gap:8px;min-width:0;flex:1}
+.qrbox>div{display:flex;flex-direction:column;gap:10px;min-width:0;flex:1 1 280px}
 .qrbox pre{margin:0;font:500 .72rem/1.4 var(--f-mono);color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
-@media (max-width:620px){.grid,.roles,.sum{grid-template-columns:1fr}.sum section{border-right:0!important}.step span{display:none}}
+@media (max-width:620px){.grid,.roles,.sum{grid-template-columns:1fr}.sum section{border-right:0!important}.step span{display:none}.qrbox canvas{margin-inline:auto}.qrbox{padding:12px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -375,17 +375,17 @@ function renderSummary(){
     <li>Permissions → Repository permissions → <b>Contents</b>: <b>Read and write</b>. Pulsa <b>Generate token</b> y cópialo.</li>
    </ol>
    <label class="l" for="f-tok">Clave de GitHub (token)</label><input id="f-tok" type="password" autocomplete="off" placeholder="github_pat_…"><div class="msg i">Se guarda solo en este dispositivo.</div></details>`}
-  <ol style="margin:0;padding-left:18px;font-size:.86rem;display:flex;flex-direction:column;gap:4px">
+  ${inClaude()?`<ol style="margin:0;padding-left:18px;font-size:.86rem;display:flex;flex-direction:column;gap:4px">
    <li>Pulsa <b>Crear documento (PDF)</b>. Se guarda como <b>${esc(pdfName())}</b>. No le cambies el nombre.</li>
    <li>Entra en <b>github.com/${esc(GH.user)}/deca</b> → <b>Add file</b> → <b>Upload files</b>, arrastra el PDF y pulsa <b>Commit changes</b>.</li>
    <li>En 1–2 minutos el QR ya funciona. Envía el PDF al chófer por WhatsApp.</li>
-  </ol>`}`:`<div class="notice e" style="margin:0"><b>Falta tu usuario de GitHub.</b> Escríbelo arriba para generar el QR y poder crear el PDF.</div>`}
-  <div style="flex-direction:row;flex-wrap:wrap">${ghOk()?`<button class="btn sm" type="button" id="qrdl">Descargar QR (PNG)</button>`:""}<button class="btn sm ghost" type="button" id="newdoc">Empezar otro documento</button></div></div></div>`}
+  </ol>`:""}`}`:`<div class="notice e" style="margin:0"><b>Falta tu usuario de GitHub.</b> Escríbelo arriba para generar el QR y poder crear el PDF.</div>`}
+  <div style="display:flex;flex-direction:row;flex-wrap:wrap;gap:8px">${ghOk()?`<button class="btn sm" type="button" id="qrdl">Descargar QR (PNG)</button>`:""}<button class="btn sm ghost" type="button" id="newdoc">Empezar otro documento</button></div></div></div>`}
   <div class="actions" style="justify-content:flex-start;align-items:center"><span class="toast" id="toast"></span></div>`;
   if(!E.length&&ghOk()){const cv=$("#qrc"),dpr=Math.max(1,Math.round(window.devicePixelRatio||1)),css=Math.max(2,Math.min(4,Math.floor(300/(QR.encode(qrUrl()).getModuleCount()+8))));drawQr(cv,0,css*dpr);cv.style.width=(+cv.dataset.cells*css)+"px";$("#qrdl").addEventListener("click",downloadQr)}
   if(!E.length){$("#f-tok")?.addEventListener("change",e=>{const v=e.target.value.trim();if(!v)return;GH.token=v;try{localStorage.setItem("dc-token",v)}catch(x){}renderSummary()});
   $("#tokdel")?.addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderSummary()})}
-  if(!E.length){let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}clearTimeout(tm);tm=setTimeout(()=>{renderSummary();const f=$("#f-gh");if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},500)});$("#newdoc").addEventListener("click",()=>{newDoc();step=0;draw();scrollTo({top:0})})}
+  if(!E.length){let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}clearTimeout(tm);tm=setTimeout(()=>{renderSummary();const f=$("#f-gh");if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},500)});$("#newdoc").addEventListener("click",()=>{const tr={...S.transportista},role=S.role;S=empty();S.transportista=tr;S.role=role;isDemo=false;showErr=false;lastPdf=null;uploadedSig="";newDoc();step=0;draw();scrollTo({top:0})})}
   $("#gofix")?.addEventListener("click",()=>{showErr=true;step=stepOf(E[0].p);draw()});
 }
 
