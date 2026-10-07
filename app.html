@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><link rel="apple-touch-icon" href="icono.png"><link rel="icon" type="image/png" href="icono.png"><meta name="apple-mobile-web-app-title" content="DeCA"><meta name="application-name" content="DeCA"><meta name="theme-color" content="#0f5563"><style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><link rel="apple-touch-icon" href="deca-icono-avlog.png"><link rel="icon" type="image/png" href="deca-icono-avlog.png"><meta name="apple-mobile-web-app-title" content="DeCA"><meta name="application-name" content="DeCA"><meta name="theme-color" content="#0f5563"><style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
 <title>Documento de Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -212,7 +212,7 @@ const genNo=()=>"DC-"+today.replace(/-/g,"")+"-"+String(Math.floor(Math.random()
 const genTok=()=>{const c="abcdefghijkmnpqrstuvwxyz23456789",a=new Uint32Array(10);crypto.getRandomValues(a);return Array.from(a,x=>c[x%c.length]).join("")};
 let docNo=S.docNo||genNo();S.docNo=docNo;if(!S.tok)S.tok=genTok();
 document.getElementById("docno").textContent="Nº "+docNo;
-function newDoc(){docNo=genNo();S.docNo=docNo;S.tok=genTok();save();document.getElementById("docno").textContent="Nº "+docNo;}
+function newDoc(){docNo=genNo();S.docNo=docNo;S.tok=genTok();S.subidoSig="";save();document.getElementById("docno").textContent="Nº "+docNo;}
 function save(){try{localStorage.setItem("dc-draft",JSON.stringify({S,demo:isDemo}))}catch(e){}}
 
 /* ---------- Validaciones ---------- */
@@ -382,10 +382,10 @@ function renderSummary(){
   </ol>`:""}`}`:`<div class="notice e" style="margin:0"><b>Falta tu usuario de GitHub.</b> Escríbelo arriba para generar el QR y poder crear el PDF.</div>`}
   <div style="display:flex;flex-direction:row;flex-wrap:wrap;gap:8px">${ghOk()?`<button class="btn sm" type="button" id="qrdl">Descargar QR (PNG)</button>`:""}<button class="btn sm ghost" type="button" id="newdoc">Empezar otro documento</button></div></div></div>`}
   <div class="actions" style="justify-content:flex-start;align-items:center"><span class="toast" id="toast"></span></div>`;
-  if(!E.length&&ghOk()){const cv=$("#qrc"),dpr=Math.max(1,Math.round(window.devicePixelRatio||1)),css=Math.max(2,Math.min(4,Math.floor(300/(QR.encode(qrUrl()).getModuleCount()+8))));drawQr(cv,0,css*dpr);cv.style.width=(+cv.dataset.cells*css)+"px";$("#qrdl").addEventListener("click",downloadQr)}
+  if(!E.length&&ghOk()){paintQr();$("#qrdl").addEventListener("click",downloadQr)}
   if(!E.length){$("#f-tok")?.addEventListener("change",e=>{const v=e.target.value.trim();if(!v)return;GH.token=v;try{localStorage.setItem("dc-token",v)}catch(x){}renderSummary()});
   $("#tokdel")?.addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderSummary()})}
-  if(!E.length){let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}clearTimeout(tm);tm=setTimeout(()=>{renderSummary();const f=$("#f-gh");if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},500)});$("#newdoc").addEventListener("click",()=>{const tr={...S.transportista},role=S.role;S=empty();S.transportista=tr;S.role=role;isDemo=false;showErr=false;lastPdf=null;uploadedSig="";newDoc();step=0;draw();scrollTo({top:0})})}
+  if(!E.length){let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}clearTimeout(tm);tm=setTimeout(()=>{renderSummary();const f=$("#f-gh");if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},500)});$("#newdoc").addEventListener("click",()=>{freshDoc();step=0;draw();scrollTo({top:0})})}
   $("#gofix")?.addEventListener("click",()=>{showErr=true;step=stepOf(E[0].p);draw()});
 }
 
@@ -507,7 +507,10 @@ async function waitLive(url,onTick){
   for(let i=0;i<36;i++){onTick(i*5/10);try{const r=await fetch(url+"?t="+Date.now(),{method:"HEAD",cache:"no-store"});if(r.ok)return true}catch(e){}await sleep(5000)}
   return false;
 }
-let lastPdf=null,uploadedSig="";
+let lastPdf=null;
+function paintQr(){const cv=$("#qrc");if(!cv)return;const dpr=Math.max(1,Math.round(window.devicePixelRatio||1)),css=Math.max(2,Math.min(4,Math.floor(300/(QR.encode(qrUrl()).getModuleCount()+8))));drawQr(cv,0,css*dpr);cv.style.width=(+cv.dataset.cells*css)+"px";const pre=document.querySelector(".qrbox pre");if(pre)pre.textContent=ghUrl();}
+const dataSig=()=>{const {subidoSig,docNo:_n,tok:_t,...rest}=S;return JSON.stringify(rest)};
+function freshDoc(){const tr={...S.transportista},role=S.role;S=empty();S.transportista=tr;S.role=role;isDemo=false;showErr=false;lastPdf=null;newDoc()}
 const slug=s=>(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30);
 function cleanCliente(s){
   return (s||"").replace(/\(.*?\)/g," ").replace(/[\\/:*?"<>|_]+/g," ")
@@ -596,7 +599,7 @@ async function downloadQr(){
 
 /* ---------- PDF ---------- */
 function buildPdf(){
-  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:"a4"});
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:"a4",compress:true});
   doc.setProperties({title:"Documento de control "+docNo,subject:"Documento de control del transporte (DeCA)",author:S.transportista.nombre||"",creator:"Documento de Control",keywords:docNo});doc.setCreationDate(new Date());
   const M=14,W=210-2*M;let y=M;
   const ink=[20,38,43],acc=[15,85,99],mut=[91,109,112];
@@ -656,7 +659,7 @@ function buildPdf(){
   doc.setDrawColor(...mut);doc.line(M,y,M+half-10,y);doc.line(M+half+4,y,M+W-10,y);
   doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...mut);
   doc.text("Firma y sello del cargador contractual",M,y+4);doc.text("Firma y sello del transportista efectivo",M+half+4,y+4);
-  try{const qc=drawQr(document.createElement("canvas"),900);doc.addImage(qc.toDataURL("image/png"),"PNG",210-M-40,y-50,40,40);
+  try{const qc=drawQr(document.createElement("canvas"),900);doc.addImage(qc.toDataURL("image/png"),"PNG",210-M-40,y-50,40,40,"qr","FAST");
     doc.setFontSize(6.5);doc.text((ghOk()?"Escanear para descargar":"Datos del documento"),210-M-20,y-8.5,{align:"center"});}catch(e){}
   doc.setFontSize(7);doc.text("Documento generado con un prototipo. Comprueba que cumple la normativa vigente antes de usarlo en carretera.",M,290);
   return doc;
@@ -672,22 +675,24 @@ async function createPdf(){
   const {E}=validate();const t=$("#toast");
   if(E.length){showErr=true;renderSummary();return}
   if(!ghOk()){t.style.color="var(--err)";t.textContent="Escribe tu usuario de GitHub en el recuadro del QR antes de crear el PDF.";$("#f-gh")?.focus();return}
+  let renum="";
+  if(!inClaude()&&GH.token&&S.subidoSig&&S.subidoSig!==dataSig()){const old=docNo;newDoc();paintQr();renum="Has cambiado datos de un documento ya enviado ("+old+"): se crea uno nuevo, "+docNo+". ";}
   let doc;try{doc=buildPdf()}catch(err){t.style.color="var(--err)";t.textContent="No se pudo generar el PDF: "+err.message;return}
   const blob=doc.output("blob"),name=pdfName(),url=ghUrl();
   lastPdf={blob,name,nice:niceName(),url,no:docNo};
   if(!inClaude()&&GH.token){
     let dlOk=true;try{await saveBlob(lastPdf.nice,blob)}catch(e){dlOk=false}
     const dlMsg=dlOk?"PDF descargado ("+esc(lastPdf.nice)+"). ":"";
-    const sig=docNo+"|"+JSON.stringify(S);
-    if(sig===uploadedSig){t.style.color="";t.innerHTML="✓ "+dlMsg+"Ya estaba subido, no se vuelve a subir.";showShare();return}
+    const sig=dataSig();
+    if(sig===S.subidoSig){t.style.color="";t.innerHTML="✓ "+dlMsg+"Ya estaba subido, no se vuelve a subir.";showShare();return}
     const nx=$("#next");nx.disabled=true;
     try{
       t.style.color="var(--muted)";t.textContent=dlMsg+"Subiendo el PDF…";
       const [pub,arc]=await Promise.allSettled([ghUpload(blob,name),ghUpload(blob,arcPath(),"deca-archivo")]);
       if(pub.status==="rejected")throw pub.reason;
-      uploadedSig=sig;
+      S.subidoSig=sig;save();
       const arcMsg=arc.status==="fulfilled"?" Copia guardada en el archivo.":"<br><span style=\"color:var(--err)\">No se guardó la copia en el archivo: "+esc(arc.reason?.message||"")+"</span>";
-      t.style.color="";t.innerHTML="✓ "+dlMsg+"PDF subido. Ya puedes enviarlo."+arcMsg+'<br><span id="qrst" class="opt">El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando…</span>';
+      t.style.color="";t.innerHTML=esc(renum)+"✓ "+dlMsg+"PDF subido. Ya puedes enviarlo."+arcMsg+'<br><span id="qrst" class="opt">El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando…</span>';
       showShare();
       const myNo=docNo;
       waitLive(url,i=>{const s=$("#qrst");if(s&&docNo===myNo)s.textContent="El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando… "+(i*10)+" s"}).then(ok=>{
@@ -705,6 +710,7 @@ async function createPdf(){
 (()=>{const h=location.hash.slice(1);
   if(h.length>30){try{const a=JSON.parse(fromB64u(h));if(Array.isArray(a)&&a[0]===1){showVerify(a);return}}catch(e){}}
   if(!inClaude()){$("#tabs").hidden=false;document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)))}
+  if(!inClaude()&&S.subidoSig){freshDoc();save()}
   draw();})();
 </script>
 
