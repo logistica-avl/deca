@@ -520,6 +520,7 @@ async function saveBlob(name,blob){
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let arcErr="";
+const netMsg=e=>{const m=(e&&e.message)||"";return /load failed|failed to fetch|networkerror|network request/i.test(m)?"Se ha cortado la conexión con GitHub. Vuelve a pulsar Crear documento.":(m||"No se pudo subir el PDF.")};
 async function ghDelete(path,repo){
   const api="https://api.github.com/repos/"+GH.user+"/"+repo+"/contents/"+path.split("/").map(encodeURIComponent).join("/");
   const hdr={Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json"};
@@ -532,7 +533,9 @@ async function ghUpload(blob,name,repo="deca"){
   const api="https://api.github.com/repos/"+GH.user+"/"+repo+"/contents/"+name.split("/").map(encodeURIComponent).join("/");
   const hdr={Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json"};
   let sha;try{const g=await fetch(api,{headers:hdr,cache:"no-store"});if(g.ok)sha=(await g.json()).sha}catch(e){}
-  const r=await fetch(api,{method:"PUT",headers:hdr,body:JSON.stringify(Object.assign({message:"Documento "+name,content:b64},sha?{sha}:{}))});
+  let r;for(let i=0;i<3;i++){try{r=await fetch(api,{method:"PUT",headers:hdr,body:JSON.stringify(Object.assign({message:"Documento "+name,content:b64},sha?{sha}:{}))});
+    if(r.status===409||r.status===422){try{const g=await fetch(api,{headers:hdr,cache:"no-store"});if(g.ok)sha=(await g.json()).sha}catch(e){}if(i<2)continue}
+    break}catch(e){if(i===2)throw new Error("Se ha cortado la conexión al subir a GitHub. Vuelve a pulsar Crear documento.");await sleep(1500*(i+1))}}
   if(r.ok)return;
   if(r.status===401)throw new Error("La clave de GitHub no es correcta o ha caducado.");
   if(r.status===403||r.status===404)throw new Error("La clave de GitHub no tiene permiso para escribir en el repositorio "+repo+".");
@@ -903,7 +906,8 @@ async function createPdf(){
   const blob=doc.output("blob"),name=pdfName(),url=ghUrl();
   lastPdf={blob,name,nice:niceName(),url,no:docNo};
   if(!inClaude()&&GH.token){
-    let dlOk=true;try{await saveBlob(lastPdf.nice,blob)}catch(e){dlOk=false}
+    const ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+    let dlOk=false;if(!ios){try{await saveBlob(lastPdf.nice,blob);dlOk=true}catch(e){}}
     const dlMsg=dlOk?"PDF descargado ("+esc(lastPdf.nice)+"). ":"";
     const sig=dataSig();
     if(sig===S.subidoSig){t.style.color="";t.innerHTML="✓ "+dlMsg+"Ya estaba subido, no se vuelve a subir.";showShare();return}
@@ -918,8 +922,8 @@ async function createPdf(){
       if(pub.status==="rejected")throw pub.reason;
       if(agFromDoc(S)){agSaveLocal();agPull().then(agPush)}
       S.subidoSig=sig;save();
-      const arcMsg=arc.status==="fulfilled"?" Copia guardada en el archivo.":"<br><span style=\"color:var(--err)\">No se guardó la copia en el archivo: "+esc(arc.reason?.message||"")+"</span>";
-      t.style.color="";t.innerHTML=esc(renum)+"✓ "+dlMsg+"PDF subido. Ya puedes enviarlo."+arcMsg+'<br><span id="qrst" class="opt">El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando…</span>';
+      const arcMsg=arc.status==="fulfilled"?" Copia guardada en el archivo.":"<br><span style=\"color:var(--err)\">No se guardó la copia en el archivo: "+esc(netMsg(arc.reason))+"</span>";
+      t.style.color="";t.innerHTML=esc(renum)+"✓ "+dlMsg+"PDF subido."+(ios?" Pulsa <b>Descargar PDF</b> o <b>Enviar al chófer</b>.":" Ya puedes enviarlo.")+arcMsg+'<br><span id="qrst" class="opt">El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando…</span>';
       showShare();
       const myNo=docNo;
       waitLive(url,i=>{const s=$("#qrst");if(s&&docNo===myNo)s.textContent="El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando… "+(i*10)+" s"}).then(ok=>{
@@ -927,7 +931,7 @@ async function createPdf(){
         s.style.color=ok?"var(--ok)":"var(--amber)";s.style.fontWeight="600";
         s.textContent=ok?"✓ QR activo.":"El QR aún no responde. Pruébalo en unos minutos.";
       });
-    }catch(e){t.style.color="var(--err)";t.textContent=e.message||"No se pudo subir el PDF."}
+    }catch(e){t.style.color="var(--err)";t.textContent=netMsg(e)}
     finally{nx.disabled=false}
     return;
   }
