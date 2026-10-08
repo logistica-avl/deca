@@ -147,6 +147,9 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 .arow .d{font:700 .8rem var(--f-mono);font-variant-numeric:tabular-nums}
 .arow .m{min-width:0;overflow-wrap:anywhere;font-size:.88rem}
 .arow .b{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ocrbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:var(--accent-soft);border-radius:8px;padding:10px 12px}
+.ocrbar p{margin:0;font-size:.86rem;min-width:0;flex:1 1 200px}
+.ocrbar label.btn{display:inline-flex;align-items:center;gap:6px}
 .toast{font-size:.88rem;color:var(--ok);font-weight:600}
 .qrbox{display:flex;gap:18px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:14px}
 .qrbox canvas{background:#fff;border-radius:6px;max-width:100%;height:auto;image-rendering:pixelated}
@@ -181,6 +184,7 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
   </div>
 
   <div class="panel">
+    <div id="ocr"></div>
     <nav class="steps" id="steps"></nav>
     <div id="view"></div>
     <div class="actions">
@@ -208,14 +212,18 @@ function sample(){return{
 function empty(){return{role:"transportista",cargador:blankParty(),transportista:blankParty(),origenIgual:true,origen:blankParty(),entregas:[blankEntrega()],veh:{tractora:"",rem:"",rem2:"",conductor:"",aut:""},fecha:today,hora:"",obs:"",precio:""};}
 
 let S, step=0, isDemo=true, showErr=false;
+function getTransp(){try{const t=JSON.parse(localStorage.getItem("dc-transp")||"null");return t&&t.nombre?t:null}catch(e){return null}}
+function keepTransp(){try{if(S.transportista.nombre.trim()&&!/ejemplo/i.test(S.transportista.nombre))localStorage.setItem("dc-transp",JSON.stringify(S.transportista))}catch(e){}}
+function applyTransp(){const t=getTransp();if(t)S.transportista={...t}}
 try{const d=JSON.parse(localStorage.getItem("dc-draft")||"null");if(d){S=d.S;isDemo=d.demo}}catch(e){}
 if(!S)S=sample();
+applyTransp();
 const genNo=()=>"DC-"+today.replace(/-/g,"")+"-"+String(Math.floor(Math.random()*9000)+1000);
 const genTok=()=>{const c="abcdefghijkmnpqrstuvwxyz23456789",a=new Uint32Array(10);crypto.getRandomValues(a);return Array.from(a,x=>c[x%c.length]).join("")};
 let docNo=S.docNo||genNo();S.docNo=docNo;if(!S.tok)S.tok=genTok();
 document.getElementById("docno").textContent="Nº "+docNo;
 function newDoc(){docNo=genNo();S.docNo=docNo;S.tok=genTok();S.subidoSig="";save();document.getElementById("docno").textContent="Nº "+docNo;}
-function save(){try{localStorage.setItem("dc-draft",JSON.stringify({S,demo:isDemo}))}catch(e){}}
+function save(){try{localStorage.setItem("dc-draft",JSON.stringify({S,demo:isDemo}))}catch(e){}keepTransp()}
 
 /* ---------- Validaciones ---------- */
 const L="TRWAGMYFPDXBNJZSQVHLCKE";
@@ -354,24 +362,26 @@ function origOf(){return S.origenIgual?S.cargador:S.origen}
 function pBlock(o){return `<p><b>${esc(o.nombre)||"—"}</b></p><p>${esc((o.nif||"").toUpperCase())||"—"}</p><p>${esc(o.dom)||"—"}</p><p>${esc(o.cp)} ${esc(o.pob)}</p>`}
 function renderGh(){
   const box=$("#ghpanel");if(!box)return;
-  const on=!inClaude()&&GH.token;
-  box.hidden=!!(on&&ghOk());if(box.hidden){box.innerHTML="";return}
-  box.innerHTML=`<h3>GitHub · subida automática</h3>
+  const on=!inClaude()&&GH.token, needGh=!(on&&ghOk()), needGem=!inClaude()&&!GH.gem;
+  box.hidden=!needGh&&!needGem;if(box.hidden){box.innerHTML="";return}
+  box.innerHTML=`${needGh?`<h3>GitHub · subida automática</h3>
   <div class="grid"><div class="f"><label class="l" for="f-gh">Tu usuario de GitHub</label><input id="f-gh" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ej. transportesgarcia" value="${esc(GH.user)}"><div class="msg ${GH.user&&!ghOk()?"e":"i"}">${GH.user&&!ghOk()?"El usuario solo puede tener letras, números y guiones.":""}</div></div>
   ${inClaude()?`<div class="f"><p class="notice" style="margin:0;font-size:.86rem">Para que se suba solo, usa la app desde <b>${esc((GH.user||"tuusuario").toLowerCase())}.github.io/deca/app.html</b>.</p></div>`:
-   on?`<div class="f" style="justify-content:center"><p style="margin:0;font-size:.9rem"><b style="color:var(--ok)">✓ Clave guardada en este dispositivo.</b></p><div><button class="btn sm ghost" type="button" id="tokdel">Quitar clave</button></div></div>`:
+   on?`<div class="f" style="justify-content:center"><p style="margin:0;font-size:.9rem"><b style="color:var(--ok)">✓ Clave de GitHub guardada.</b></p></div>`:
    `<div class="f"><label class="l" for="f-tok">Clave de GitHub (token)</label><input id="f-tok" type="password" autocomplete="off" placeholder="github_pat_…"><div class="msg i">Se guarda solo en este dispositivo.</div></div>`}</div>
-  ${!inClaude()&&!on?`<details><summary style="cursor:pointer;font-weight:600;font-size:.86rem">Cómo crear la clave (una vez por dispositivo)</summary>
+  ${!inClaude()&&!on?`<details><summary style="cursor:pointer;font-weight:600;font-size:.86rem">Cómo crear la clave de GitHub</summary>
    <ol style="margin:6px 0 0;padding-left:18px;font-size:.84rem;display:flex;flex-direction:column;gap:3px">
     <li>En GitHub: tu foto → <b>Settings</b> → <b>Developer settings</b> → <b>Personal access tokens</b> → <b>Fine-grained tokens</b> → <b>Generate new token</b>.</li>
     <li>Nombre: <b>deca</b>. Caducidad: <b>1 año</b>. Repository access: <b>Only select repositories</b> → <b>deca</b> y <b>deca-archivo</b>.</li>
     <li>Permissions → Repository permissions → <b>Contents</b>: <b>Read and write</b>. Pulsa <b>Generate token</b> y cópialo.</li>
-   </ol></details>`:""}`;
-  let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}
+   </ol></details>`:""}`:""}
+  ${needGem?`<h3>Google · leer fotos y PDF</h3>
+  <div class="f"><label class="l" for="f-gem">Clave de Google AI Studio</label><input id="f-gem" type="password" autocomplete="off" placeholder="Pega aquí la clave de Google"><div class="msg i">Gratis. Se guarda solo en este dispositivo. Sácala en aistudio.google.com → Get API key.</div></div>`:""}`;
+  if(needGh){let tm;$("#f-gh").addEventListener("input",e=>{GH.user=e.target.value.trim().replace(/^@/,"");try{localStorage.setItem("dc-gh",GH.user)}catch(x){}
     const m=box.querySelector(".msg");const bad=GH.user&&!ghOk();m.className="msg "+(bad?"e":"i");m.textContent=bad?"El usuario solo puede tener letras, números y guiones.":"";
-    clearTimeout(tm);tm=setTimeout(()=>{if(step===4)renderSummary()},400)});
-  $("#f-tok")?.addEventListener("change",e=>{const v=e.target.value.trim();if(!v)return;GH.token=v;try{localStorage.setItem("dc-token",v)}catch(x){}renderGh();if(step===4)renderSummary()});
-  $("#tokdel")?.addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderGh();if(step===4)renderSummary()});
+    clearTimeout(tm);tm=setTimeout(()=>{if(step===4)renderSummary()},400)});}
+  $("#f-tok")?.addEventListener("change",e=>{const v=e.target.value.trim();if(!v)return;GH.token=v;try{localStorage.setItem("dc-token",v)}catch(x){}renderGh();renderOcr();if(step===4)renderSummary()});
+  $("#f-gem")?.addEventListener("change",e=>{const v=e.target.value.trim();if(!v)return;GH.gem=v;try{localStorage.setItem("dc-gem",v)}catch(x){}renderGh();renderOcr()});
 }
 function renderSummary(){
   const {E,W}=validate();
@@ -446,7 +456,7 @@ $("#next").addEventListener("click",()=>{
     step++;draw();scrollTo({top:0});
   }else createPdf();
 });
-$("#clear").addEventListener("click",()=>{S=empty();newDoc();isDemo=false;showErr=false;step=0;save();draw()});
+$("#clear").addEventListener("click",()=>{S=empty();applyTransp();newDoc();isDemo=false;showErr=false;step=0;save();draw()});
 
 /* ---------- QR ---------- */
 const cut=(s,n)=>{s=(s||"").trim();return s.length>n?s.slice(0,n):s};
@@ -469,7 +479,7 @@ function qrText(){
   return L.join("\n");
 }
 const webBase=()=>{let b=(S.web||"").trim().replace(/#.*$/,"");if(b&&!/^https?:\/\//i.test(b))b="https://"+b;return b};
-const GH={user:"logistica-avl",token:""};try{GH.user=localStorage.getItem("dc-gh")||"logistica-avl";GH.token=localStorage.getItem("dc-token")||""}catch(e){}
+const GH={user:"logistica-avl",token:"",gem:""};try{GH.user=localStorage.getItem("dc-gh")||"logistica-avl";GH.token=localStorage.getItem("dc-token")||"";GH.gem=localStorage.getItem("dc-gem")||""}catch(e){}
 const ghOk=()=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(GH.user);
 const pdfName=()=>docNo+"-"+S.tok+".pdf";
 const ghUrl=()=>"https://"+GH.user.toLowerCase()+".github.io/deca/"+pdfName();
@@ -521,9 +531,82 @@ async function waitLive(url,onTick){
   return false;
 }
 let lastPdf=null;
+/* ---------- Leer foto/PDF con Gemini ---------- */
+function renderOcr(){
+  const box=$("#ocr");if(!box)return;
+  if(inClaude()){box.innerHTML="";return}
+  box.innerHTML=GH.gem?`<div class="ocrbar"><p id="ocrmsg"><b>¿Tienes el pedido en foto o PDF?</b> La app lo lee y rellena los datos. Revísalos antes de crear el documento.</p>
+    <label class="btn pri sm" for="f-ocr">Leer foto o PDF</label><input id="f-ocr" type="file" accept="image/*,application/pdf" hidden></div>`:"";
+  $("#f-ocr")?.addEventListener("change",e=>{const f=e.target.files[0];e.target.value="";if(f)readDoc(f)});
+}
+async function shrinkImage(file){
+  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("No se pudo abrir la imagen."));i.src=URL.createObjectURL(file)});
+  const k=Math.min(1,2000/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement("canvas");
+  c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+  URL.revokeObjectURL(img.src);return{mime:"image/jpeg",data:c.toDataURL("image/jpeg",.85).split(",")[1]};
+}
+const fileB64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(f)});
+const OCR_PROMPT=t=>`Eres un asistente de una empresa de transporte por carretera en España. Te paso un pedido, albarán, orden de carga o mensaje (foto o PDF).
+Extrae los datos para rellenar el documento de control del transporte. Nuestra empresa es el TRANSPORTISTA${t?` ("${t}")`:""}: NO la pongas como almacén de carga ni de descarga.
+Responde SOLO con un JSON con esta forma exacta (usa "" si un dato no aparece; no inventes nada):
+{"carga":{"nombre":"","nif":"","dom":"","cp":"","pob":""},
+ "fecha_carga":"AAAA-MM-DD","hora_carga":"HH:MM","precio":"",
+ "entregas":[{"nombre":"","nif":"","dom":"","cp":"","pob":"","fecha":"AAAA-MM-DD","hora":"HH:MM","mercancia":"","cantidad":"","unidad":"kg|t|m3|l|uds","obs":""}],
+ "vehiculo":{"tractora":"","remolque":"","remolque2":"","conductor":""},
+ "observaciones":""}
+Reglas: "carga" es el almacén o empresa donde se carga la mercancía (el cargador). Cada lugar de descarga es una entrega. NIF/CIF en mayúsculas sin espacios ni guiones. CP de 5 cifras. Matrículas en mayúsculas sin espacios ni guiones. "cantidad" solo el número con punto decimal. "precio" solo el número en euros. Si el año no aparece, usa ${new Date().getFullYear()}.`;
+async function callGemini(part){
+  const body={contents:[{parts:[part,{text:OCR_PROMPT(S.transportista.nombre)}]}],generationConfig:{responseMimeType:"application/json",temperature:0}};
+  let last;
+  for(const model of["gemini-flash-latest","gemini-2.5-flash","gemini-2.0-flash"]){
+    const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":GH.gem},body:JSON.stringify(body)});
+    if(r.ok){const j=await r.json();const txt=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
+      try{return JSON.parse(txt.replace(/^```(json)?|```$/g,"").trim())}catch(e){throw new Error("Google no devolvió datos legibles. Prueba con una foto más nítida.")}}
+    let msg="";try{msg=(await r.json()).error?.message||""}catch(e){}
+    if(r.status===404){last=msg;continue}
+    if(r.status===400&&/api key/i.test(msg))throw new Error("La clave de Google no es válida. Quítala en Archivo y vuelve a pegarla.");
+    if(r.status===401||r.status===403)throw new Error("La clave de Google no es válida o no tiene permiso para Gemini.");
+    if(r.status===429)throw new Error("Has llegado al límite gratuito de Google por ahora. Espera un rato o rellena a mano.");
+    throw new Error("Google respondió con error "+r.status+(msg?": "+msg:"")+".");
+  }
+  throw new Error("No encuentro un modelo de Gemini disponible ("+last+").");
+}
+function cleanNum(v){return String(v??"").replace(/[^\d.,]/g,"").replace(/\.(?=\d{3}(\D|$))/g,"").replace(",",".")}
+function applyOcr(d){
+  const s=v=>String(v??"").trim(),up=v=>s(v).toUpperCase().replace(/[\s.-]/g,""),plate=v=>s(v).toUpperCase().replace(/[\s-]/g,"");
+  const party=(o,src)=>{if(!src)return;["nombre","dom","pob"].forEach(k=>{if(s(src[k]))o[k]=s(src[k])});if(s(src.nif))o.nif=up(src.nif);if(s(src.cp))o.cp=s(src.cp).replace(/\D/g,"").slice(0,5)};
+  let n=0;const cnt=()=>n++;
+  if(d.carga){party(S.cargador,d.carga);cnt()}
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s(d.fecha_carga))){S.fecha=s(d.fecha_carga);cnt()}
+  if(/^\d{1,2}:\d{2}$/.test(s(d.hora_carga))){S.hora=s(d.hora_carga).padStart(5,"0");cnt()}
+  if(cleanNum(d.precio)){S.precio=cleanNum(d.precio);cnt()}
+  const ents=Array.isArray(d.entregas)?d.entregas.filter(e=>e&&(s(e.nombre)||s(e.cp)||s(e.pob)||s(e.mercancia))):[];
+  if(ents.length){S.entregas=ents.map(e=>{const x=blankEntrega();party(x,e);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s(e.fecha)))x.fecha=s(e.fecha);
+    if(/^\d{1,2}:\d{2}$/.test(s(e.hora)))x.hora=s(e.hora).padStart(5,"0");
+    x.merc=s(e.mercancia);x.peso=cleanNum(e.cantidad);x.unidad=["kg","t","m3","l","uds"].includes(s(e.unidad))?s(e.unidad):"kg";x.obs=s(e.obs);return x});cnt()}
+  const v=d.vehiculo||{};if(s(v.tractora)){S.veh.tractora=plate(v.tractora);cnt()}if(s(v.remolque))S.veh.rem=plate(v.remolque);if(s(v.remolque2))S.veh.rem2=plate(v.remolque2);if(s(v.conductor))S.veh.conductor=s(v.conductor);
+  if(s(d.observaciones))S.obs=s(d.observaciones);
+  return n;
+}
+async function readDoc(file){
+  const m=$("#ocrmsg"),lab=$('label[for="f-ocr"]');
+  const isPdf=file.type==="application/pdf"||/\.pdf$/i.test(file.name);
+  if(!isPdf&&!/^image\//.test(file.type)){m.innerHTML="<b style='color:var(--err)'>Ese archivo no es una foto ni un PDF.</b>";return}
+  if(isPdf&&file.size>15e6){m.innerHTML="<b style='color:var(--err)'>El PDF es demasiado grande (máx. 15 MB).</b>";return}
+  lab.style.pointerEvents="none";lab.style.opacity=".6";m.textContent="Leyendo "+file.name+"… (unos segundos)";
+  try{
+    const part=isPdf?{inline_data:{mime_type:"application/pdf",data:await fileB64(file)}}:await shrinkImage(file).then(x=>({inline_data:{mime_type:x.mime,data:x.data}}));
+    const d=await callGemini(part);
+    if(isDemo){const tr={...S.transportista},role=S.role;S=empty();S.transportista=getTransp()||tr;S.role=role;isDemo=false}
+    const n=applyOcr(d);save();step=0;showErr=false;draw();renderOcr();
+    const mm=$("#ocrmsg");mm.innerHTML=n?`<b style="color:var(--ok)">✓ Datos leídos de ${esc(file.name)}.</b> Revisa cada paso: la lectura puede fallar en algún dato.`:`<b style="color:var(--amber)">No he encontrado datos de transporte en ese archivo.</b> Prueba con otra foto o rellénalo a mano.`;
+  }catch(e){m.innerHTML="<b style='color:var(--err)'>"+esc(e.message||"No se pudo leer el archivo.")+"</b>"}
+  finally{const l=$('label[for="f-ocr"]');if(l){l.style.pointerEvents="";l.style.opacity=""}}
+}
 function paintQr(){const cv=$("#qrc");if(!cv)return;const dpr=Math.max(1,Math.round(window.devicePixelRatio||1)),css=Math.max(2,Math.min(4,Math.floor(300/(QR.encode(qrUrl()).getModuleCount()+8))));drawQr(cv,0,css*dpr);cv.style.width=(+cv.dataset.cells*css)+"px";const pre=document.querySelector(".qrbox pre");if(pre)pre.textContent=ghUrl();}
 const dataSig=()=>{const {subidoSig,docNo:_n,tok:_t,...rest}=S;return JSON.stringify(rest)};
-function freshDoc(){const tr={...S.transportista},role=S.role;S=empty();S.transportista=tr;S.role=role;isDemo=false;showErr=false;lastPdf=null;newDoc()}
+function freshDoc(){const tr={...S.transportista},role=S.role;S=empty();S.transportista=getTransp()||tr;S.role=role;isDemo=false;showErr=false;lastPdf=null;newDoc()}
 const slug=s=>(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30);
 function cleanCliente(s){
   return (s||"").replace(/\(.*?\)/g," ").replace(/[\\/:*?"<>|_]+/g," ")
@@ -565,8 +648,9 @@ function renderArchive(){
   box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año. Solo tú puedes verlas.</p>
   <div class="grid"><div class="f full"><label class="l" for="f-buscar">Buscar <span class="opt">(fecha, nº, matrícula, cliente o destino)</span></label><input id="f-buscar" type="search" placeholder="ej. 1234BCD o 03/10/2026" value="${esc(box.dataset.q||"")}"></div></div>
   <div id="alist"><p class="opt">Cargando…</p></div><span class="toast" id="atoast"></span>
-  <p class="opt" style="margin:8px 0 0">Conectado a GitHub como <b>${esc(GH.user)}</b>. <button class="btn sm ghost" type="button" id="tokdel2">Quitar clave de este dispositivo</button></p>`;
-  $("#tokdel2").addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderGh();showTab("nuevo")});
+  <p class="opt" style="margin:8px 0 0">Conectado a GitHub como <b>${esc(GH.user)}</b>. <button class="btn sm ghost" type="button" id="tokdel2">Quitar clave de GitHub</button> ${GH.gem?`<button class="btn sm ghost" type="button" id="gemdel">Quitar clave de Google</button>`:""}</p>`;
+  $("#tokdel2").addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderGh();renderOcr();showTab("nuevo")});
+  $("#gemdel")?.addEventListener("click",()=>{GH.gem="";try{localStorage.removeItem("dc-gem")}catch(x){}renderGh();renderOcr();showTab("nuevo")});
   $("#f-buscar").addEventListener("input",e=>{box.dataset.q=e.target.value;paintList()});
   if(arcList)paintList();
   loadArchive().then(l=>{arcList=l;paintList()}).catch(e=>{$("#alist").innerHTML=`<div class="notice e">${esc(e.message)}</div>`});
@@ -726,7 +810,7 @@ async function createPdf(){
   if(h.length>30){try{const a=JSON.parse(fromB64u(h));if(Array.isArray(a)&&a[0]===1){showVerify(a);return}}catch(e){}}
   if(!inClaude()){$("#tabs").hidden=false;document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)))}
   if(!inClaude()&&S.subidoSig){freshDoc();save()}
-  renderGh();draw();})();
+  renderGh();renderOcr();draw();})();
 </script>
 
 </body></html>
