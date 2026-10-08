@@ -173,6 +173,7 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 
   <div class="notice" id="demo">Formulario rellenado con datos de ejemplo. Bórralos y pon los tuyos. <button class="btn sm ghost" id="clear" type="button">Vaciar formulario</button></div>
 
+  <div class="notice" id="editbar" hidden></div>
   <div class="panel" id="ghpanel"></div>
 
   <div class="panel">
@@ -222,7 +223,7 @@ const genNo=()=>"DC-"+today.replace(/-/g,"")+"-"+String(Math.floor(Math.random()
 const genTok=()=>{const c="abcdefghijkmnpqrstuvwxyz23456789",a=new Uint32Array(10);crypto.getRandomValues(a);return Array.from(a,x=>c[x%c.length]).join("")};
 let docNo=S.docNo||genNo();S.docNo=docNo;if(!S.tok)S.tok=genTok();
 document.getElementById("docno").textContent="Nº "+docNo;
-function newDoc(){docNo=genNo();S.docNo=docNo;S.tok=genTok();S.subidoSig="";save();document.getElementById("docno").textContent="Nº "+docNo;}
+function newDoc(){docNo=genNo();S.docNo=docNo;S.tok=genTok();S.subidoSig="";S.arcPath="";S.editando=false;save();document.getElementById("docno").textContent="Nº "+docNo;}
 function save(){try{localStorage.setItem("dc-draft",JSON.stringify({S,demo:isDemo}))}catch(e){}keepTransp()}
 
 /* ---------- Validaciones ---------- */
@@ -444,7 +445,7 @@ function draw(){
   document.querySelectorAll(".step").forEach(b=>b.addEventListener("click",()=>{step=+b.dataset.s;draw()}));
   $("#prev").style.visibility=step===0?"hidden":"visible";
   $("#next").textContent=step===4?"Crear documento (PDF)":"Siguiente →";
-  $("#demo").hidden=!isDemo;
+  $("#demo").hidden=!isDemo;renderEditBar();
   renderStep();
 }
 document.querySelectorAll(".role").forEach(b=>b.addEventListener("click",()=>{S.role=b.dataset.role;save();draw()}));
@@ -515,6 +516,12 @@ async function saveBlob(name,blob){
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let arcErr="";
+async function ghDelete(path,repo){
+  const api="https://api.github.com/repos/"+GH.user+"/"+repo+"/contents/"+path.split("/").map(encodeURIComponent).join("/");
+  const hdr={Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json"};
+  const g=await fetch(api,{headers:hdr,cache:"no-store"});if(!g.ok)return;
+  const sha=(await g.json()).sha;await fetch(api,{method:"DELETE",headers:hdr,body:JSON.stringify({message:"Sustituido "+path,sha})});
+}
 async function ghUpload(blob,name,repo="deca"){
   const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)});
   const api="https://api.github.com/repos/"+GH.user+"/"+repo+"/contents/"+name.split("/").map(encodeURIComponent).join("/");
@@ -633,7 +640,7 @@ async function readDoc(file){
   finally{const l=$('label[for="f-ocr"]');if(l){l.style.pointerEvents="";l.style.opacity=""}}
 }
 function paintQr(){const cv=$("#qrc");if(!cv)return;const dpr=Math.max(1,Math.round(window.devicePixelRatio||1)),css=Math.max(2,Math.min(4,Math.floor(300/(QR.encode(qrUrl()).getModuleCount()+8))));drawQr(cv,0,css*dpr);cv.style.width=(+cv.dataset.cells*css)+"px";const pre=document.querySelector(".qrbox pre");if(pre)pre.textContent=ghUrl();}
-const dataSig=()=>{const {subidoSig,docNo:_n,tok:_t,...rest}=S;return JSON.stringify(rest)};
+const dataSig=()=>{const {subidoSig,docNo:_n,tok:_t,editando:_e,arcPath:_a,...rest}=S;return JSON.stringify(rest)};
 function freshDoc(){const tr={...S.transportista},role=S.role;S=empty();S.transportista=getTransp()||tr;S.role=role;isDemo=false;showErr=false;lastPdf=null;newDoc()}
 const slug=s=>(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30);
 function cleanCliente(s){
@@ -660,9 +667,10 @@ async function loadArchive(){
   if(r.status===409)return[];
   if(!r.ok)throw new Error("GitHub respondió con error "+r.status+".");
   const j=await r.json();
+  const jsons=new Set(j.tree.filter(x=>/\.json$/.test(x.path)).map(x=>x.path));
   return j.tree.filter(x=>x.type==="blob"&&/DC-\d{8}-.*\.pdf$/.test(x.path)).map(x=>{
     const f=x.path.split("/").pop().replace(/\.pdf$/,""),[base,mat,carg,dest,orig]=f.split("__"),dm=base.match(/DC-(\d{4})(\d{2})(\d{2})-(\d+)/);
-    return{path:x.path,file:(mat&&carg&&dm)?cleanCliente(carg.replace(/-/g," "))+"_"+mat+"_"+fmtFile(dm[1],dm[2],dm[3])+".pdf":f.split("__")[0]+".pdf",orig:(orig||"").replace(/-/g," "),fecha:dm?dm[3]+"/"+dm[2]+"/"+dm[1]:"",orden:dm?dm[1]+dm[2]+dm[3]+dm[4]:"",no:dm?"DC-"+dm[1]+dm[2]+dm[3]+"-"+dm[4]:base,mat:mat||"",carg:(carg||"").replace(/-/g," "),dest:(dest||"").replace(/-/g," ")};
+    return{path:x.path,json:jsons.has(x.path.replace(/\.pdf$/,".json")),base,file:(mat&&carg&&dm)?cleanCliente(carg.replace(/-/g," "))+"_"+mat+"_"+fmtFile(dm[1],dm[2],dm[3])+".pdf":f.split("__")[0]+".pdf",orig:(orig||"").replace(/-/g," "),fecha:dm?dm[3]+"/"+dm[2]+"/"+dm[1]:"",orden:dm?dm[1]+dm[2]+dm[3]+dm[4]:"",no:dm?"DC-"+dm[1]+dm[2]+dm[3]+"-"+dm[4]:base,mat:mat||"",carg:(carg||"").replace(/-/g," "),dest:(dest||"").replace(/-/g," ")};
   }).sort((a,b)=>b.orden.localeCompare(a.orden));
 }
 async function arcBlob(path){
@@ -688,9 +696,10 @@ function paintList(){
   const q=norm($("#archivo").dataset.q||"").replace(/\s+/g," ").trim();
   const l=arcList.filter(x=>!q||q.split(" ").every(w=>norm([x.fecha,x.no,x.mat,x.carg,x.dest,x.orig].join(" ")).includes(w)));
   if(!arcList.length){el.innerHTML='<p class="opt">Todavía no hay documentos en el archivo. Se guardan solos al crear cada documento.</p>';return}
-  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.orig||x.dest?" · "+esc(x.orig||"?")+" → "+esc(x.dest||"?"):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button></span></div>`).join("");
+  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.orig||x.dest?" · "+esc(x.orig||"?")+" → "+esc(x.dest||"?"):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button><button class="btn sm ghost" type="button" data-a="ed" data-i="${arcList.indexOf(x)}">Modificar</button></span></div>`).join("");
   el.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",async()=>{
     const x=arcList[+b.dataset.i],t=$("#atoast");b.disabled=true;
+    if(b.dataset.a==="ed"){try{await editDoc(x,t)}catch(e){t.style.color="var(--err)";t.textContent=e.message||"No se pudo abrir el documento."}finally{b.disabled=false}return}
     try{
       if(!x.blob){t.style.color="var(--muted)";t.textContent="Descargando "+x.no+"…";x.blob=await arcBlob(x.path)}
       if(b.dataset.a==="dl"){await saveBlob(x.file,x.blob);t.style.color="";t.textContent=x.file+" guardado."}
@@ -700,6 +709,33 @@ function paintList(){
     }catch(e){if(e&&e.name!=="AbortError"){t.style.color="var(--err)";t.textContent=e.message||"No se pudo completar."}}
     finally{b.disabled=false}
   }));
+}
+async function arcText(path){
+  const r=await fetch("https://api.github.com/repos/"+GH.user+"/deca-archivo/contents/"+path.split("/").map(encodeURIComponent).join("/"),{headers:{Authorization:"Bearer "+GH.token,Accept:"application/vnd.github.raw"},cache:"no-store"});
+  if(!r.ok)throw new Error("No se pudieron leer los datos ("+r.status+").");return r.text();
+}
+async function editDoc(x,t){
+  const m=x.base.match(/^(DC-\d{8}-\d+)-([A-Za-z0-9]+)$/);
+  if(!m)throw new Error("Este documento no se puede modificar (nombre no reconocido).");
+  t.style.color="var(--muted)";t.textContent="Abriendo "+x.no+"…";
+  let datos=null;
+  if(x.json){datos=JSON.parse(await arcText(x.path.replace(/\.pdf$/,".json"))).S}
+  else{
+    if(!GH.gem)throw new Error("Este documento es anterior y no guarda sus datos. Para modificarlo, pon la clave de Google y la app leerá el PDF.");
+    t.textContent="Leyendo el PDF con Google para recuperar los datos…";
+    if(!x.blob)x.blob=await arcBlob(x.path);
+    const d=await callGemini({inline_data:{mime_type:"application/pdf",data:await fileB64(x.blob)}});
+    const role=S.role,curTr={...S.transportista};S=empty();S.transportista=getTransp()||curTr;S.role=role;applyOcr(d);datos=S;
+  }
+  S={...empty(),...datos};S.docNo=m[1];S.tok=m[2];docNo=m[1];S.arcPath=x.path;S.editando=true;S.subidoSig="";
+  isDemo=false;showErr=false;lastPdf=null;step=0;save();
+  document.getElementById("docno").textContent="Nº "+docNo;
+  showTab("nuevo");draw();scrollTo({top:0});t.textContent="";
+}
+function renderEditBar(){
+  const b=$("#editbar");if(!b)return;b.hidden=!S.editando;if(!S.editando)return;
+  b.innerHTML=`<b>Modificando ${esc(docNo)}.</b> Corrige lo que necesites y pulsa <b>Crear documento</b>: se sustituye el anterior y el QR sigue siendo el mismo. <button class="btn sm ghost" type="button" id="editcancel">Cancelar</button>`;
+  $("#editcancel").addEventListener("click",()=>{freshDoc();save();step=0;draw();scrollTo({top:0})});
 }
 function showTab(tb){
   document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tab===tb));
@@ -803,7 +839,7 @@ async function createPdf(){
   if(E.length){showErr=true;renderSummary();return}
   if(!ghOk()){t.style.color="var(--err)";t.textContent="Escribe tu usuario de GitHub arriba del todo antes de crear el PDF.";$("#f-gh")?.focus();return}
   let renum="";
-  if(!inClaude()&&GH.token&&S.subidoSig&&S.subidoSig!==dataSig()){const old=docNo;newDoc();paintQr();renum="Has cambiado datos de un documento ya enviado ("+old+"): se crea uno nuevo, "+docNo+". ";}
+  if(!inClaude()&&GH.token&&!S.editando&&S.subidoSig&&S.subidoSig!==dataSig()){const old=docNo;newDoc();paintQr();renum="Has cambiado datos de un documento ya enviado ("+old+"): se crea uno nuevo, "+docNo+". ";}
   let doc;try{doc=buildPdf()}catch(err){t.style.color="var(--err)";t.textContent="No se pudo generar el PDF: "+err.message;return}
   const blob=doc.output("blob"),name=pdfName(),url=ghUrl();
   lastPdf={blob,name,nice:niceName(),url,no:docNo};
@@ -815,7 +851,11 @@ async function createPdf(){
     const nx=$("#next");nx.disabled=true;
     try{
       t.style.color="var(--muted)";t.textContent=dlMsg+"Subiendo el PDF…";
-      const [pub,arc]=await Promise.allSettled([ghUpload(blob,name),ghUpload(blob,arcPath(),"deca-archivo")]);
+      const oldAp=S.arcPath,ap=arcPath();S.arcPath=ap;
+      const {subidoSig:_s,editando:_e,...datos}=S;
+      const [pub,arc]=await Promise.allSettled([ghUpload(blob,name),ghUpload(blob,ap,"deca-archivo").then(()=>ghUpload(new Blob([JSON.stringify({v:1,S:datos})],{type:"application/json"}),ap.replace(/\.pdf$/,".json"),"deca-archivo"))]);
+      if(oldAp&&oldAp!==ap&&arc.status==="fulfilled"){try{await ghDelete(oldAp,"deca-archivo");await ghDelete(oldAp.replace(/\.pdf$/,".json"),"deca-archivo")}catch(e){}}
+      arcList=null;
       if(pub.status==="rejected")throw pub.reason;
       S.subidoSig=sig;save();
       const arcMsg=arc.status==="fulfilled"?" Copia guardada en el archivo.":"<br><span style=\"color:var(--err)\">No se guardó la copia en el archivo: "+esc(arc.reason?.message||"")+"</span>";
@@ -837,7 +877,7 @@ async function createPdf(){
 (()=>{const h=location.hash.slice(1);
   if(h.length>30){try{const a=JSON.parse(fromB64u(h));if(Array.isArray(a)&&a[0]===1){showVerify(a);return}}catch(e){}}
   if(!inClaude()){$("#tabs").hidden=false;document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)))}
-  if(!inClaude()&&S.subidoSig){freshDoc();save()}
+  if(!inClaude()&&S.subidoSig&&!S.editando){freshDoc();save()}
   renderGh();renderOcr();draw();})();
 </script>
 
