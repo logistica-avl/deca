@@ -549,34 +549,40 @@ const fileB64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>r
 const OCR_PROMPT=t=>`Eres un asistente de una empresa de transporte por carretera en España. Te paso un pedido, albarán, orden de carga o mensaje (foto o PDF).
 Extrae los datos para rellenar el documento de control del transporte. Nuestra empresa es el TRANSPORTISTA${t?` ("${t}")`:""}: NO la pongas como almacén de carga ni de descarga.
 Responde SOLO con un JSON con esta forma exacta (usa "" si un dato no aparece; no inventes nada):
-{"carga":{"nombre":"","nif":"","dom":"","cp":"","pob":""},
+{"cliente":{"nombre":"","nif":"","dom":"","cp":"","pob":""},
+ "carga":{"nombre":"","nif":"","dom":"","cp":"","pob":""},
  "fecha_carga":"AAAA-MM-DD","hora_carga":"HH:MM","precio":"",
  "entregas":[{"nombre":"","nif":"","dom":"","cp":"","pob":"","fecha":"AAAA-MM-DD","hora":"HH:MM","mercancia":"","cantidad":"","unidad":"kg|t|m3|l|uds","obs":""}],
  "vehiculo":{"tractora":"","remolque":"","remolque2":"","conductor":""},
  "observaciones":""}
-Reglas: "carga" es el almacén o empresa donde se carga la mercancía (el cargador). Cada lugar de descarga es una entrega. NIF/CIF en mayúsculas sin espacios ni guiones. CP de 5 cifras. Matrículas en mayúsculas sin espacios ni guiones. "cantidad" solo el número con punto decimal. "precio" solo el número en euros. Si el año no aparece, usa ${new Date().getFullYear()}.`;
+Reglas: "cliente" es la empresa que nos encarga y paga el transporte (suele ser quien emite la orden de carga, con su CIF en la cabecera). "carga" es el almacén o empresa donde se recoge la mercancía. Si son la misma empresa, repite los datos en los dos. Cada lugar de descarga es una entrega. Expresiones como "antes de las 18,00" o "a las 08,00" son horas (18:00, 08:00). Pon en "obs" y "observaciones" las referencias de pedido o de descarga. NIF/CIF en mayúsculas sin espacios ni guiones y sin el prefijo de país "ES". CP de 5 cifras. Matrículas en mayúsculas sin espacios ni guiones. "cantidad" solo el número con punto decimal. "precio" solo el número en euros. Si el año no aparece, usa ${new Date().getFullYear()}.`;
 async function callGemini(part){
   const body={contents:[{parts:[part,{text:OCR_PROMPT(S.transportista.nombre)}]}],generationConfig:{responseMimeType:"application/json",temperature:0}};
-  let last;
-  for(const model of["gemini-flash-latest","gemini-2.5-flash","gemini-2.0-flash"]){
+  let last="",busy=false;
+  for(const model of["gemini-flash-latest","gemini-2.5-flash","gemini-2.5-flash-lite","gemini-2.0-flash"])for(let intento=0;intento<2;intento++){
+    if(intento){const m=$("#ocrmsg");if(m)m.textContent="Google está saturado, reintentando…";await sleep(2500)}
     const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":GH.gem},body:JSON.stringify(body)});
     if(r.ok){const j=await r.json();const txt=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
       try{return JSON.parse(txt.replace(/^```(json)?|```$/g,"").trim())}catch(e){throw new Error("Google no devolvió datos legibles. Prueba con una foto más nítida.")}}
     let msg="";try{msg=(await r.json()).error?.message||""}catch(e){}
-    if(r.status===404){last=msg;continue}
+    if(r.status===404){last=msg;break}
+    if(r.status===503||r.status===500||r.status===502||r.status===504){busy=true;last=msg;continue}
     if(r.status===400&&/api key/i.test(msg))throw new Error("La clave de Google no es válida. Quítala en Archivo y vuelve a pegarla.");
     if(r.status===401||r.status===403)throw new Error("La clave de Google no es válida o no tiene permiso para Gemini.");
     if(r.status===429)throw new Error("Has llegado al límite gratuito de Google por ahora. Espera un rato o rellena a mano.");
     throw new Error("Google respondió con error "+r.status+(msg?": "+msg:"")+".");
   }
-  throw new Error("No encuentro un modelo de Gemini disponible ("+last+").");
+  throw new Error(busy?"Google está saturado ahora mismo. Prueba otra vez en un minuto.":"No encuentro un modelo de Gemini disponible ("+last+").");
 }
 function cleanNum(v){return String(v??"").replace(/[^\d.,]/g,"").replace(/\.(?=\d{3}(\D|$))/g,"").replace(",",".")}
 function applyOcr(d){
   const s=v=>String(v??"").trim(),up=v=>s(v).toUpperCase().replace(/[\s.-]/g,""),plate=v=>s(v).toUpperCase().replace(/[\s-]/g,"");
-  const party=(o,src)=>{if(!src)return;["nombre","dom","pob"].forEach(k=>{if(s(src[k]))o[k]=s(src[k])});if(s(src.nif))o.nif=up(src.nif);if(s(src.cp))o.cp=s(src.cp).replace(/\D/g,"").slice(0,5)};
+  const party=(o,src)=>{if(!src)return;["nombre","dom","pob"].forEach(k=>{if(s(src[k]))o[k]=s(src[k])});if(s(src.nif))o.nif=up(src.nif).replace(/^ES(?=[A-Z0-9]{9}$)/,"");if(s(src.cp))o.cp=s(src.cp).replace(/\D/g,"").slice(0,5)};
   let n=0;const cnt=()=>n++;
-  if(d.carga){party(S.cargador,d.carga);cnt()}
+  const same=(a,b)=>!a||!b||!s(a.nombre)||!s(b.nombre)||(up(a.nif)&&up(a.nif)===up(b.nif))||norm(a.nombre)===norm(b.nombre);
+  const cli=d.cliente&&s(d.cliente.nombre)?d.cliente:null,car=d.carga&&s(d.carga.nombre)?d.carga:null;
+  if(cli&&car&&!same(cli,car)){party(S.cargador,cli);S.origenIgual=false;S.origen=blankParty();party(S.origen,car);cnt()}
+  else if(cli||car){party(S.cargador,cli||car);if(cli&&car)party(S.cargador,{...car,...Object.fromEntries(Object.entries(cli).filter(([k,v])=>s(v)))});S.origenIgual=true;cnt()}
   if(/^\d{4}-\d{2}-\d{2}$/.test(s(d.fecha_carga))){S.fecha=s(d.fecha_carga);cnt()}
   if(/^\d{1,2}:\d{2}$/.test(s(d.hora_carga))){S.hora=s(d.hora_carga).padStart(5,"0");cnt()}
   if(cleanNum(d.precio)){S.precio=cleanNum(d.precio);cnt()}
