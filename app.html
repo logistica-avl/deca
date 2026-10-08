@@ -595,9 +595,9 @@ function renderOcr(){
 }
 async function shrinkImage(file){
   const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("No se pudo abrir la imagen."));i.src=URL.createObjectURL(file)});
-  const k=Math.min(1,2000/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement("canvas");
+  const k=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement("canvas");
   c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);
-  URL.revokeObjectURL(img.src);return{mime:"image/jpeg",data:c.toDataURL("image/jpeg",.85).split(",")[1]};
+  URL.revokeObjectURL(img.src);return{mime:"image/jpeg",data:c.toDataURL("image/jpeg",.8).split(",")[1]};
 }
 const fileB64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(f)});
 const OCR_PROMPT=t=>`Eres un asistente de una empresa de transporte por carretera en España. Te paso un pedido, albarán, orden de carga o mensaje (foto o PDF).
@@ -611,7 +611,9 @@ Responde SOLO con un JSON con esta forma exacta (usa "" si un dato no aparece; n
  "observaciones":""}
 Reglas: "cliente" es la empresa que nos encarga y paga el transporte (suele ser quien emite la orden de carga, con su CIF en la cabecera). "carga" es el almacén o empresa donde se recoge la mercancía. Si son la misma empresa, repite los datos en los dos. Cada lugar de descarga es una entrega. Expresiones como "antes de las 18,00" o "a las 08,00" son horas (18:00, 08:00). Pon en "obs" y "observaciones" las referencias de pedido o de descarga. NIF/CIF en mayúsculas sin espacios ni guiones y sin el prefijo de país "ES". CP de 5 cifras. Matrículas en mayúsculas sin espacios ni guiones. "cantidad" solo el número con punto decimal. "precio" solo el número en euros. Si el año no aparece, usa ${new Date().getFullYear()}.`;
 async function geminiModels(){
-  try{const c=JSON.parse(localStorage.getItem("dc-gem-models")||"null");if(c&&c.k===GH.gem.slice(-6)&&Date.now()-c.t<864e5&&c.m.length)return c.m}catch(e){}
+  const score=n=>(/flash-lite/.test(n)?0:/flash/.test(n)?2:5)+(/preview|exp/.test(n)?1:0)+(/latest/.test(n)?-0.5:0)-(parseFloat((n.match(/gemini-(\d+(\.\d+)?)/)||[])[1])||0)*0.1;
+  const order=l=>[...new Set(l)].sort((a,b)=>score(a)-score(b));
+  try{const c=JSON.parse(localStorage.getItem("dc-gem-models2")||"null");if(c&&c.k===GH.gem.slice(-6)&&Date.now()-c.t<864e5&&c.m.length)return order(c.m)}catch(e){}
   let list=[];
   try{
     let url="https://generativelanguage.googleapis.com/v1beta/models?pageSize=200";
@@ -621,32 +623,48 @@ async function geminiModels(){
         .filter(n=>/gemini/.test(n)&&/flash|pro/.test(n)&&!/image|tts|audio|live|embed|thinking-exp|robotics|computer|native/.test(n));}
     else if(r.status===400||r.status===401||r.status===403){let msg="";try{msg=(await r.json()).error?.message||""}catch(e){}throw new Error("La clave de Google no es válida ("+r.status+(msg?": "+msg:"")+"). Quítala en Archivo y vuelve a pegarla.")}
   }catch(e){if(/clave/.test(e.message))throw e}
-  const score=n=>(/flash-lite/.test(n)?2:/flash/.test(n)?0:5)+(/preview|exp/.test(n)?1:0)+(/latest/.test(n)?-0.5:0)-(parseFloat((n.match(/gemini-(\d+(\.\d+)?)/)||[])[1])||0)*0.1;
-  list=[...new Set(list)].sort((a,b)=>score(a)-score(b)).slice(0,8);
-  if(!list.length)list=["gemini-flash-latest","gemini-2.5-flash","gemini-2.5-flash-lite","gemini-2.0-flash","gemini-flash-lite-latest"];
-  try{localStorage.setItem("dc-gem-models",JSON.stringify({k:GH.gem.slice(-6),t:Date.now(),m:list}))}catch(e){}
+  list=order(list).slice(0,8);
+  if(!list.length)list=["gemini-flash-lite-latest","gemini-2.5-flash-lite","gemini-2.0-flash","gemini-flash-latest","gemini-2.5-flash"];
+  try{localStorage.setItem("dc-gem-models2",JSON.stringify({k:GH.gem.slice(-6),t:Date.now(),m:list}))}catch(e){}
   return list;
 }
 async function callGemini(part,onMsg){
-  const body={contents:[{parts:[part,{text:OCR_PROMPT(S.transportista.nombre)}]}],generationConfig:{responseMimeType:"application/json",temperature:0}};
-  const models=await geminiModels(),log=[],t0=Date.now(),say=x=>{if(onMsg)return onMsg(x);const m=$("#ocrmsg");if(m)m.textContent=x};
+  const base={contents:[{parts:[part,{text:OCR_PROMPT(S.transportista.nombre)}]}],generationConfig:{responseMimeType:"application/json",temperature:0}};
+  let models=await geminiModels();let best="";try{best=localStorage.getItem("dc-gem-best2")||""}catch(e){}
+  if(best&&!/lite/.test(best)&&models.some(m=>/lite/.test(m)))best="";
+  if(best)models=[best,...models.filter(m=>m!==best)];
+  const log=[],t0=Date.now(),say=x=>{if(onMsg)return onMsg(x);const m=$("#ocrmsg");if(m)m.textContent=x};
+  const tick=setInterval(()=>{const m=onMsg?null:$("#ocrmsg");if(m&&/Leyendo|reintentando/.test(m.textContent))m.textContent=m.textContent.replace(/ · \d+ s$/,"")+" · "+Math.round((Date.now()-t0)/1000)+" s"},1000);
+  try{
   for(let ronda=0;ronda<3;ronda++){
     for(const model of models){
-      if(Date.now()-t0>90000)break;
-      say((ronda?"Google está saturado, reintentando":"Leyendo")+"… ("+model+")");
-      let r;try{r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":GH.gem},body:JSON.stringify(body)})}
-      catch(e){log.push(model+": sin conexión");continue}
-      if(r.ok){const j=await r.json();const txt=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
-        try{return JSON.parse(txt.replace(/^```(json)?|```$/g,"").trim())}catch(e){log.push(model+": respuesta no legible");continue}}
-      let msg="";try{msg=(await r.json()).error?.message||""}catch(e){}
+      if(Date.now()-t0>100000)break;
+      say((ronda?"Google está saturado, reintentando":"Leyendo")+"… ("+model.replace(/^gemini-/,"")+")");
+      const cfg=/2\.5|flash-latest|flash-lite-latest/.test(model)&&!/pro/.test(model)?{thinkingConfig:{thinkingBudget:0}}:/gemini-3/.test(model)?{thinkingConfig:{thinkingLevel:"low"}}:{};
+      let body={...base,generationConfig:{...base.generationConfig,...cfg}},r,msg="";
+      for(let k=0;k<2;k++){
+        const ac=new AbortController(),to=setTimeout(()=>ac.abort(),25000);
+        try{r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",signal:ac.signal,headers:{"Content-Type":"application/json","x-goog-api-key":GH.gem},body:JSON.stringify(body)})}
+        catch(e){r=null;msg=e.name==="AbortError"?"tarda demasiado":"sin conexión"}
+        finally{clearTimeout(to)}
+        if(r&&r.status===400){try{msg=(await r.clone().json()).error?.message||""}catch(e){}
+          if(/thinking/i.test(msg)&&k===0){body=base;continue}}
+        break;
+      }
+      if(!r){log.push(model+": "+msg);continue}
+      if(r.ok){const j=await r.json();const txt=(j.candidates?.[0]?.content?.parts||[]).filter(p=>!p.thought).map(p=>p.text||"").join("");
+        try{const out=JSON.parse(txt.replace(/^```(json)?|```$/g,"").trim());try{localStorage.setItem("dc-gem-best2",model)}catch(e){}return out}catch(e){log.push(model+": respuesta no legible");continue}}
+      if(!msg){try{msg=(await r.json()).error?.message||""}catch(e){}}
       if(r.status===400&&/api key/i.test(msg))throw new Error("La clave de Google no es válida. Quítala en Archivo y vuelve a pegarla.");
       if(r.status===401||r.status===403)throw new Error("La clave de Google no es válida o no tiene permiso para Gemini ("+r.status+").");
+      if(best===model){try{localStorage.removeItem("dc-gem-best2")}catch(e){}}
       log.push(model+": "+r.status+(r.status===503?" saturado":r.status===429?" límite":r.status===404?" no disponible":""));
     }
-    if(Date.now()-t0>90000)break;
-    await sleep(4000*(ronda+1));
+    if(Date.now()-t0>100000)break;
+    await sleep(3000*(ronda+1));
   }
-  try{localStorage.removeItem("dc-gem-models")}catch(e){}
+  }finally{clearInterval(tick)}
+  try{localStorage.removeItem("dc-gem-models2")}catch(e){}
   const all429=log.length&&log.every(x=>/ 429/.test(x));
   throw new Error((all429?"Has llegado al límite gratuito de Google por ahora. ":"Google no ha podido leerlo ahora mismo. Prueba otra vez en un rato. ")+"Detalle: "+[...new Set(log)].slice(-6).join(" · "));
 }
