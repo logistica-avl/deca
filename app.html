@@ -556,23 +556,45 @@ Responde SOLO con un JSON con esta forma exacta (usa "" si un dato no aparece; n
  "vehiculo":{"tractora":"","remolque":"","remolque2":"","conductor":""},
  "observaciones":""}
 Reglas: "cliente" es la empresa que nos encarga y paga el transporte (suele ser quien emite la orden de carga, con su CIF en la cabecera). "carga" es el almacén o empresa donde se recoge la mercancía. Si son la misma empresa, repite los datos en los dos. Cada lugar de descarga es una entrega. Expresiones como "antes de las 18,00" o "a las 08,00" son horas (18:00, 08:00). Pon en "obs" y "observaciones" las referencias de pedido o de descarga. NIF/CIF en mayúsculas sin espacios ni guiones y sin el prefijo de país "ES". CP de 5 cifras. Matrículas en mayúsculas sin espacios ni guiones. "cantidad" solo el número con punto decimal. "precio" solo el número en euros. Si el año no aparece, usa ${new Date().getFullYear()}.`;
+async function geminiModels(){
+  try{const c=JSON.parse(localStorage.getItem("dc-gem-models")||"null");if(c&&c.k===GH.gem.slice(-6)&&Date.now()-c.t<864e5&&c.m.length)return c.m}catch(e){}
+  let list=[];
+  try{
+    let url="https://generativelanguage.googleapis.com/v1beta/models?pageSize=200";
+    const r=await fetch(url,{headers:{"x-goog-api-key":GH.gem}});
+    if(r.ok){const j=await r.json();
+      list=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent")).map(m=>m.name.replace(/^models\//,""))
+        .filter(n=>/gemini/.test(n)&&/flash|pro/.test(n)&&!/image|tts|audio|live|embed|thinking-exp|robotics|computer|native/.test(n));}
+    else if(r.status===400||r.status===401||r.status===403){let msg="";try{msg=(await r.json()).error?.message||""}catch(e){}throw new Error("La clave de Google no es válida ("+r.status+(msg?": "+msg:"")+"). Quítala en Archivo y vuelve a pegarla.")}
+  }catch(e){if(/clave/.test(e.message))throw e}
+  const score=n=>(/flash-lite/.test(n)?2:/flash/.test(n)?0:5)+(/preview|exp/.test(n)?1:0)+(/latest/.test(n)?-0.5:0)-(parseFloat((n.match(/gemini-(\d+(\.\d+)?)/)||[])[1])||0)*0.1;
+  list=[...new Set(list)].sort((a,b)=>score(a)-score(b)).slice(0,8);
+  if(!list.length)list=["gemini-flash-latest","gemini-2.5-flash","gemini-2.5-flash-lite","gemini-2.0-flash","gemini-flash-lite-latest"];
+  try{localStorage.setItem("dc-gem-models",JSON.stringify({k:GH.gem.slice(-6),t:Date.now(),m:list}))}catch(e){}
+  return list;
+}
 async function callGemini(part){
   const body={contents:[{parts:[part,{text:OCR_PROMPT(S.transportista.nombre)}]}],generationConfig:{responseMimeType:"application/json",temperature:0}};
-  let last="",busy=false;
-  for(const model of["gemini-flash-latest","gemini-2.5-flash","gemini-2.5-flash-lite","gemini-2.0-flash"])for(let intento=0;intento<2;intento++){
-    if(intento){const m=$("#ocrmsg");if(m)m.textContent="Google está saturado, reintentando…";await sleep(2500)}
-    const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":GH.gem},body:JSON.stringify(body)});
-    if(r.ok){const j=await r.json();const txt=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
-      try{return JSON.parse(txt.replace(/^```(json)?|```$/g,"").trim())}catch(e){throw new Error("Google no devolvió datos legibles. Prueba con una foto más nítida.")}}
-    let msg="";try{msg=(await r.json()).error?.message||""}catch(e){}
-    if(r.status===404){last=msg;break}
-    if(r.status===503||r.status===500||r.status===502||r.status===504){busy=true;last=msg;continue}
-    if(r.status===400&&/api key/i.test(msg))throw new Error("La clave de Google no es válida. Quítala en Archivo y vuelve a pegarla.");
-    if(r.status===401||r.status===403)throw new Error("La clave de Google no es válida o no tiene permiso para Gemini.");
-    if(r.status===429)throw new Error("Has llegado al límite gratuito de Google por ahora. Espera un rato o rellena a mano.");
-    throw new Error("Google respondió con error "+r.status+(msg?": "+msg:"")+".");
+  const models=await geminiModels(),log=[],t0=Date.now(),say=x=>{const m=$("#ocrmsg");if(m)m.textContent=x};
+  for(let ronda=0;ronda<3;ronda++){
+    for(const model of models){
+      if(Date.now()-t0>90000)break;
+      say((ronda?"Google está saturado, reintentando":"Leyendo")+"… ("+model+")");
+      let r;try{r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":GH.gem},body:JSON.stringify(body)})}
+      catch(e){log.push(model+": sin conexión");continue}
+      if(r.ok){const j=await r.json();const txt=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
+        try{return JSON.parse(txt.replace(/^```(json)?|```$/g,"").trim())}catch(e){log.push(model+": respuesta no legible");continue}}
+      let msg="";try{msg=(await r.json()).error?.message||""}catch(e){}
+      if(r.status===400&&/api key/i.test(msg))throw new Error("La clave de Google no es válida. Quítala en Archivo y vuelve a pegarla.");
+      if(r.status===401||r.status===403)throw new Error("La clave de Google no es válida o no tiene permiso para Gemini ("+r.status+").");
+      log.push(model+": "+r.status+(r.status===503?" saturado":r.status===429?" límite":r.status===404?" no disponible":""));
+    }
+    if(Date.now()-t0>90000)break;
+    await sleep(4000*(ronda+1));
   }
-  throw new Error(busy?"Google está saturado ahora mismo. Prueba otra vez en un minuto.":"No encuentro un modelo de Gemini disponible ("+last+").");
+  try{localStorage.removeItem("dc-gem-models")}catch(e){}
+  const all429=log.length&&log.every(x=>/ 429/.test(x));
+  throw new Error((all429?"Has llegado al límite gratuito de Google por ahora. ":"Google no ha podido leerlo ahora mismo. Prueba otra vez en un rato. ")+"Detalle: "+[...new Set(log)].slice(-6).join(" · "));
 }
 function cleanNum(v){return String(v??"").replace(/[^\d.,]/g,"").replace(/\.(?=\d{3}(\D|$))/g,"").replace(",",".")}
 function applyOcr(d){
