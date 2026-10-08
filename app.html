@@ -144,6 +144,7 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 .arow{display:grid;grid-template-columns:1fr auto;grid-template-areas:"d b" "m m";gap:6px 10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .arow .d{grid-area:d}.arow .m{grid-area:m}.arow .b{grid-area:b}
 .arow .plate{white-space:nowrap}
+.btn.del{color:var(--err);border-color:var(--err-soft)}.btn.del.sure{background:var(--err);color:#fff;border-color:var(--err)}
 .rmsg{font-size:.84rem}.rmsg:empty{display:none}
 .arow .d{font:700 .8rem var(--f-mono);font-variant-numeric:tabular-nums}
 .arow .m{min-width:0;overflow-wrap:anywhere;font-size:.88rem}
@@ -521,7 +522,8 @@ async function ghDelete(path,repo){
   const api="https://api.github.com/repos/"+GH.user+"/"+repo+"/contents/"+path.split("/").map(encodeURIComponent).join("/");
   const hdr={Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json"};
   const g=await fetch(api,{headers:hdr,cache:"no-store"});if(!g.ok)return;
-  const sha=(await g.json()).sha;await fetch(api,{method:"DELETE",headers:hdr,body:JSON.stringify({message:"Sustituido "+path,sha})});
+  const sha=(await g.json()).sha;const d=await fetch(api,{method:"DELETE",headers:hdr,body:JSON.stringify({message:"Eliminado "+path,sha})});
+  if(!d.ok&&d.status!==404)throw new Error(d.status===403?"La clave de GitHub no tiene permiso para borrar en "+repo+".":"GitHub no pudo borrar el archivo ("+d.status+").");
 }
 async function ghUpload(blob,name,repo="deca"){
   const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)});
@@ -684,7 +686,7 @@ function renderArchive(){
   if(!GH.token){box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año.</p><div class="notice">Para ver el archivo, activa primero la subida automática con tu clave de GitHub (arriba del todo, en «Nuevo documento»).</div>`;return}
   box.innerHTML=`<h2>Archivo</h2><p class="sub">Copias de todos tus documentos durante 1 año. Solo tú puedes verlas.</p>
   <div class="grid"><div class="f full"><label class="l" for="f-buscar">Buscar <span class="opt">(fecha, nº, matrícula, cliente o destino)</span></label><input id="f-buscar" type="search" placeholder="ej. 1234BCD o 03/10/2026" value="${esc(box.dataset.q||"")}"></div></div>
-  <div id="alist"><p class="opt">Cargando…</p></div><span class="toast" id="atoast"></span>
+  <span class="toast" id="atoast"></span><div id="alist"><p class="opt">Cargando…</p></div>
   <p class="opt" style="margin:8px 0 0">Conectado a GitHub como <b>${esc(GH.user)}</b>. <button class="btn sm ghost" type="button" id="tokdel2">Quitar clave de GitHub</button> ${GH.gem?`<button class="btn sm ghost" type="button" id="gemdel">Quitar clave de Google</button>`:""}</p>`;
   $("#tokdel2").addEventListener("click",()=>{GH.token="";try{localStorage.removeItem("dc-token")}catch(x){}renderGh();renderOcr();showTab("nuevo")});
   $("#gemdel")?.addEventListener("click",()=>{GH.gem="";try{localStorage.removeItem("dc-gem")}catch(x){}renderGh();renderOcr();showTab("nuevo")});
@@ -697,9 +699,23 @@ function paintList(){
   const q=norm($("#archivo").dataset.q||"").replace(/\s+/g," ").trim();
   const l=arcList.filter(x=>!q||q.split(" ").every(w=>norm([x.fecha,x.no,x.mat,x.carg,x.dest,x.orig].join(" ")).includes(w)));
   if(!arcList.length){el.innerHTML='<p class="opt">Todavía no hay documentos en el archivo. Se guardan solos al crear cada documento.</p>';return}
-  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.orig||x.dest?" · "+esc(x.orig||"?")+" → "+esc(x.dest||"?"):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button><button class="btn sm ghost" type="button" data-a="ed" data-i="${arcList.indexOf(x)}">Modificar</button></span><span class="rmsg toast" data-r="${arcList.indexOf(x)}" style="grid-column:1/-1"></span></div>`).join("");
+  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.orig||x.dest?" · "+esc(x.orig||"?")+" → "+esc(x.dest||"?"):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button><button class="btn sm ghost" type="button" data-a="ed" data-i="${arcList.indexOf(x)}">Modificar</button><button class="btn sm ghost del" type="button" data-a="del" data-i="${arcList.indexOf(x)}">Eliminar</button></span><span class="rmsg toast" data-r="${arcList.indexOf(x)}" style="grid-column:1/-1"></span></div>`).join("");
   el.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",async()=>{
     const x=arcList[+b.dataset.i],t=el.querySelector(`.rmsg[data-r="${b.dataset.i}"]`)||$("#atoast");b.disabled=true;
+    if(b.dataset.a==="del"){
+      if(!b.classList.contains("sure")){b.classList.add("sure");b.textContent="¿Seguro? Pulsa otra vez";b.disabled=false;t.style.color="var(--err)";t.textContent="Se borrará el PDF y su QR dejará de funcionar. No se puede deshacer.";
+        clearTimeout(b._t);b._t=setTimeout(()=>{b.classList.remove("sure");b.textContent="Eliminar";t.textContent=""},6000);return}
+      clearTimeout(b._t);b.textContent="Eliminando…";
+      try{
+        const m=x.base.match(/^(DC-\d{8}-\d+-[A-Za-z0-9]+)$/);
+        await ghDelete(x.path,"deca-archivo");
+        if(x.json)await ghDelete(x.path.replace(/\.pdf$/,".json"),"deca-archivo");
+        if(m)await ghDelete(m[1]+".pdf","deca");
+        if(S.editando&&S.arcPath===x.path){freshDoc();save();draw()}
+        arcList=arcList.filter(y=>y!==x);paintList();
+        const at=$("#atoast");if(at){at.style.color="";at.textContent="✓ "+x.no+" eliminado."}
+      }catch(e){b.disabled=false;b.classList.remove("sure");b.textContent="Eliminar";t.style.color="var(--err)";t.textContent=e.message||"No se pudo eliminar."}
+      return}
     if(b.dataset.a==="ed"){try{await editDoc(x,t)}catch(e){t.style.color="var(--err)";t.textContent=e.message||"No se pudo abrir el documento."}finally{b.disabled=false}return}
     try{
       if(!x.blob){t.style.color="var(--muted)";t.textContent="Descargando "+x.no+"…";x.blob=await arcBlob(x.path)}
