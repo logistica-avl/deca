@@ -144,6 +144,7 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 .arow{display:grid;grid-template-columns:1fr auto;grid-template-areas:"d b" "m m";gap:6px 10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .arow .d{grid-area:d}.arow .m{grid-area:m}.arow .b{grid-area:b}
 .arow .plate{white-space:nowrap}
+.rmsg{font-size:.84rem}.rmsg:empty{display:none}
 .arow .d{font:700 .8rem var(--f-mono);font-variant-numeric:tabular-nums}
 .arow .m{min-width:0;overflow-wrap:anywhere;font-size:.88rem}
 .arow .b{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
@@ -580,9 +581,9 @@ async function geminiModels(){
   try{localStorage.setItem("dc-gem-models",JSON.stringify({k:GH.gem.slice(-6),t:Date.now(),m:list}))}catch(e){}
   return list;
 }
-async function callGemini(part){
+async function callGemini(part,onMsg){
   const body={contents:[{parts:[part,{text:OCR_PROMPT(S.transportista.nombre)}]}],generationConfig:{responseMimeType:"application/json",temperature:0}};
-  const models=await geminiModels(),log=[],t0=Date.now(),say=x=>{const m=$("#ocrmsg");if(m)m.textContent=x};
+  const models=await geminiModels(),log=[],t0=Date.now(),say=x=>{if(onMsg)return onMsg(x);const m=$("#ocrmsg");if(m)m.textContent=x};
   for(let ronda=0;ronda<3;ronda++){
     for(const model of models){
       if(Date.now()-t0>90000)break;
@@ -696,9 +697,9 @@ function paintList(){
   const q=norm($("#archivo").dataset.q||"").replace(/\s+/g," ").trim();
   const l=arcList.filter(x=>!q||q.split(" ").every(w=>norm([x.fecha,x.no,x.mat,x.carg,x.dest,x.orig].join(" ")).includes(w)));
   if(!arcList.length){el.innerHTML='<p class="opt">Todavía no hay documentos en el archivo. Se guardan solos al crear cada documento.</p>';return}
-  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.orig||x.dest?" · "+esc(x.orig||"?")+" → "+esc(x.dest||"?"):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button><button class="btn sm ghost" type="button" data-a="ed" data-i="${arcList.indexOf(x)}">Modificar</button></span></div>`).join("");
+  el.innerHTML=`<p class="opt">${l.length} de ${arcList.length} documento${arcList.length>1?"s":""}</p>`+l.slice(0,200).map((x,i)=>`<div class="arow"><span class="d">${esc(x.fecha)} · <span class="plate" style="font-size:.78rem">${esc(x.mat)||"—"}</span></span><span class="m"><b>${esc(x.no)}</b><br><span class="opt">${esc(x.carg)}${x.orig||x.dest?" · "+esc(x.orig||"?")+" → "+esc(x.dest||"?"):""}</span></span><span class="b"><button class="btn sm" type="button" data-a="dl" data-i="${arcList.indexOf(x)}">Descargar</button><button class="btn sm ghost" type="button" data-a="sh" data-i="${arcList.indexOf(x)}">Enviar</button><button class="btn sm ghost" type="button" data-a="ed" data-i="${arcList.indexOf(x)}">Modificar</button></span><span class="rmsg toast" data-r="${arcList.indexOf(x)}" style="grid-column:1/-1"></span></div>`).join("");
   el.querySelectorAll("[data-a]").forEach(b=>b.addEventListener("click",async()=>{
-    const x=arcList[+b.dataset.i],t=$("#atoast");b.disabled=true;
+    const x=arcList[+b.dataset.i],t=el.querySelector(`.rmsg[data-r="${b.dataset.i}"]`)||$("#atoast");b.disabled=true;
     if(b.dataset.a==="ed"){try{await editDoc(x,t)}catch(e){t.style.color="var(--err)";t.textContent=e.message||"No se pudo abrir el documento."}finally{b.disabled=false}return}
     try{
       if(!x.blob){t.style.color="var(--muted)";t.textContent="Descargando "+x.no+"…";x.blob=await arcBlob(x.path)}
@@ -717,14 +718,15 @@ async function arcText(path){
 async function editDoc(x,t){
   const m=x.base.match(/^(DC-\d{8}-\d+)-([A-Za-z0-9]+)$/);
   if(!m)throw new Error("Este documento no se puede modificar (nombre no reconocido).");
+  if(!x.json&&!GH.gem)throw new Error("Este documento es anterior y no guarda sus datos. Para modificarlo, pon la clave de Google en este dispositivo y la app leerá el PDF.");
   t.style.color="var(--muted)";t.textContent="Abriendo "+x.no+"…";
   let datos=null;
   if(x.json){datos=JSON.parse(await arcText(x.path.replace(/\.pdf$/,".json"))).S}
   else{
     if(!GH.gem)throw new Error("Este documento es anterior y no guarda sus datos. Para modificarlo, pon la clave de Google y la app leerá el PDF.");
-    t.textContent="Leyendo el PDF con Google para recuperar los datos…";
+    t.style.color="var(--muted)";t.textContent="Leyendo el PDF con Google para recuperar los datos… (unos segundos)";
     if(!x.blob)x.blob=await arcBlob(x.path);
-    const d=await callGemini({inline_data:{mime_type:"application/pdf",data:await fileB64(x.blob)}});
+    const d=await callGemini({inline_data:{mime_type:"application/pdf",data:await fileB64(x.blob)}},msg=>{t.style.color="var(--muted)";t.textContent=msg});
     const role=S.role,curTr={...S.transportista};S=empty();S.transportista=getTransp()||curTr;S.role=role;applyOcr(d);datos=S;
   }
   S={...empty(),...datos};S.docNo=m[1];S.tok=m[2];docNo=m[1];S.arcPath=x.path;S.editando=true;S.subidoSig="";
