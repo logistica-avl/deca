@@ -175,6 +175,7 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 
   <div class="notice" id="demo">Formulario rellenado con datos de ejemplo. Bórralos y pon los tuyos. <button class="btn sm ghost" id="clear" type="button">Vaciar formulario</button></div>
 
+  <datalist id="agenda-dl"></datalist>
   <div class="notice" id="editbar" hidden></div>
   <div class="panel" id="ghpanel"></div>
 
@@ -301,14 +302,14 @@ const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 const get=p=>p.split(".").reduce((o,k)=>o?.[k],S);
 function set(p,v){const ks=p.split(".");let o=S;for(let i=0;i<ks.length-1;i++)o=o[ks[i]];o[ks.at(-1)]=v;}
 
-function field(p,label,{req=false,full=false,ph="",mono=false,type="text",hint=""}={}){
+function field(p,label,{req=false,full=false,ph="",mono=false,type="text",hint="",list=""}={}){
   const id="f-"+p.replace(/\./g,"-");
   return `<div class="f${full?" full":""}"><label class="l" for="${id}">${label} ${req?'<span class="req">OBLIGATORIO</span>':'<span class="opt">(opcional)</span>'}</label>
-  <input id="${id}" data-p="${p}" type="${type}" ${mono?'class="mono"':""} ${type==="number"?'min="0" step="any" inputmode="decimal"':""} placeholder="${esc(ph)}" value="${esc(get(p))}">
+  <input id="${id}" data-p="${p}" type="${type}" ${list?`list="${list}" autocomplete="off"`:""} ${mono?'class="mono"':""} ${type==="number"?'min="0" step="any" inputmode="decimal"':""} placeholder="${esc(ph)}" value="${esc(get(p))}">
   <div class="msg" data-m="${p}">${hint}</div></div>`;
 }
 function partyFields(base,{nifReq=true,nameReq=true,nameLabel="Nombre de empresa"}={}){
-  return `<div class="grid">${field(base+".nombre",nameLabel,{req:nameReq,full:true})}
+  return `<div class="grid">${field(base+".nombre",nameLabel,{req:nameReq,full:true,list:base==="transportista"?"":"agenda-dl"})}
   ${field(base+".dom","Domicilio / Dirección",{ph:"Calle, número"})}${field(base+".cp","Código postal",{req:true,ph:"46000",mono:true})}
   ${field(base+".pob","Población",{req:true})}${field(base+".nif","NIF / CIF",{req:nifReq,mono:true,ph:"B12345674"})}</div>`;
 }
@@ -420,6 +421,7 @@ function bind(){
     el.addEventListener("input",()=>{let v=el.value;if(el.classList.contains("mono"))v=v.toUpperCase();set(el.dataset.p,v);
       if(el.dataset.p.endsWith(".nombre")){const h=el.closest(".entrega")?.querySelector(".ehead b");if(h){const i=+el.dataset.p.split(".")[1];h.textContent="Entrega #"+(i+1)+(v?": "+v:"")}}
       markEdited();save();updateMsgs();});
+    if(el.getAttribute("list")==="agenda-dl")el.addEventListener("change",()=>agFill(el));
   });
   document.querySelectorAll("[data-c]").forEach(el=>el.addEventListener("change",()=>{set(el.dataset.c,el.checked);markEdited();save();renderStep()}));
   document.querySelectorAll("[data-del]").forEach(el=>el.addEventListener("click",()=>{S.entregas.splice(+el.dataset.del,1);save();renderStep()}));
@@ -541,6 +543,45 @@ async function waitLive(url,onTick){
   return false;
 }
 let lastPdf=null;
+/* ---------- Agenda de empresas ---------- */
+let AG={};try{AG=JSON.parse(localStorage.getItem("dc-agenda")||"{}")||{}}catch(e){AG={}}
+const agKey=n=>norm(n).replace(/[^a-z0-9]+/g," ").replace(/\b(s ?l ?u?|s ?a ?u?|s ?coop( ?v)?|c ?b)\b/g,"").trim();
+function agAdd(p){
+  if(!p||!(p.nombre||"").trim()||/ejemplo/i.test(p.nombre)||!((p.cp||"").trim()||(p.pob||"").trim()))return false;
+  const k=agKey(p.nombre);if(!k)return false;const o=AG[k]||{n:0};
+  ["nombre","nif","dom","cp","pob"].forEach(f=>{const v=(p[f]||"").trim();if(v)o[f]=f==="nif"?v.toUpperCase():v});
+  o.n=(o.n||0)+1;o.ult=today;AG[k]=o;return true;
+}
+function agSaveLocal(){try{localStorage.setItem("dc-agenda",JSON.stringify(AG))}catch(e){}paintAgenda()}
+function agFromDoc(s){let ch=false;if(!s)return ch;ch=agAdd(s.cargador)||ch;if(!s.origenIgual)ch=agAdd(s.origen)||ch;(s.entregas||[]).forEach(e=>{if(!e.igual)ch=agAdd(e)||ch});return ch}
+function paintAgenda(){
+  const dl=$("#agenda-dl");if(!dl)return;
+  dl.innerHTML=Object.values(AG).sort((a,b)=>(b.n||0)-(a.n||0)).slice(0,500).map(o=>`<option value="${esc(o.nombre)}">${esc([o.cp,o.pob].filter(Boolean).join(" "))}</option>`).join("");
+}
+function agFill(el){
+  const o=AG[agKey(el.value)];if(!o)return;
+  const base=el.dataset.p.replace(/\.nombre$/,"");
+  ["nombre","nif","dom","cp","pob"].forEach(f=>{if(o[f]!=null)set(base+"."+f,o[f])});
+  save();renderStep();
+  const f=document.getElementById("f-"+base.replace(/\./g,"-")+"-nombre");if(f){f.focus();const n=f.value.length;try{f.setSelectionRange(n,n)}catch(e){}}
+}
+function agMerge(remote){let ch=false;for(const[k,o] of Object.entries(remote||{})){const l=AG[k];if(!l||(o.ult||"")>(l.ult||"")||(o.n||0)>(l.n||0)){AG[k]={...l,...o,n:Math.max(o.n||0,l?.n||0)};ch=true}}return ch}
+async function agPull(){
+  if(inClaude()||!GH.token||!ghOk())return;
+  try{
+    const r=await fetch("https://api.github.com/repos/"+GH.user+"/deca-archivo/contents/agenda.json",{headers:{Authorization:"Bearer "+GH.token,Accept:"application/vnd.github.raw"},cache:"no-store"});
+    if(r.ok){agMerge(JSON.parse(await r.text()));agSaveLocal();return}
+    if(r.status!==404)return;
+    // primera vez: crear la agenda con los documentos del archivo
+    const l=await loadArchive();let k=0;
+    for(const x of l.filter(x=>x.json).slice(0,150)){try{agFromDoc(JSON.parse(await arcText(x.path.replace(/\.pdf$/,".json"))).S);k++}catch(e){}}
+    agSaveLocal();if(Object.keys(AG).length)await agPush();
+  }catch(e){}
+}
+async function agPush(){
+  if(inClaude()||!GH.token||!ghOk())return;
+  try{await ghUpload(new Blob([JSON.stringify(AG)],{type:"application/json"}),"agenda.json","deca-archivo")}catch(e){}
+}
 /* ---------- Leer foto/PDF con Gemini ---------- */
 function renderOcr(){
   const box=$("#ocr");if(!box)return;
@@ -875,6 +916,7 @@ async function createPdf(){
       if(oldAp&&oldAp!==ap&&arc.status==="fulfilled"){try{await ghDelete(oldAp,"deca-archivo");await ghDelete(oldAp.replace(/\.pdf$/,".json"),"deca-archivo")}catch(e){}}
       arcList=null;
       if(pub.status==="rejected")throw pub.reason;
+      if(agFromDoc(S)){agSaveLocal();agPull().then(agPush)}
       S.subidoSig=sig;save();
       const arcMsg=arc.status==="fulfilled"?" Copia guardada en el archivo.":"<br><span style=\"color:var(--err)\">No se guardó la copia en el archivo: "+esc(arc.reason?.message||"")+"</span>";
       t.style.color="";t.innerHTML=esc(renum)+"✓ "+dlMsg+"PDF subido. Ya puedes enviarlo."+arcMsg+'<br><span id="qrst" class="opt">El QR se activa en 1–2 minutos (lo publica GitHub). Comprobando…</span>';
@@ -896,7 +938,7 @@ async function createPdf(){
   if(h.length>30){try{const a=JSON.parse(fromB64u(h));if(Array.isArray(a)&&a[0]===1){showVerify(a);return}}catch(e){}}
   if(!inClaude()){$("#tabs").hidden=false;document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)))}
   if(!inClaude()&&S.subidoSig&&!S.editando){freshDoc();save()}
-  renderGh();renderOcr();draw();})();
+  renderGh();renderOcr();paintAgenda();draw();agPull();})();
 </script>
 
 </body></html>
