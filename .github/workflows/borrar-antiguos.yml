@@ -1,0 +1,41 @@
+name: Borrar documentos de más de 7 días
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # todos los días a las 03:00 UTC
+  workflow_dispatch:       # botón "Run workflow" para lanzarlo a mano
+
+permissions:
+  contents: write
+
+jobs:
+  borrar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Borrar PDF antiguos y limpiar el historial
+        run: |
+          limite=$(date -u -d '7 days ago' +%Y%m%d)
+          borrados=0
+          for f in DC-*.pdf; do
+            [ -e "$f" ] || continue
+            fecha=$(echo "$f" | sed -E 's/^DC-([0-9]{8})-.*/\1/')
+            if [ "$fecha" -lt "$limite" ]; then
+              rm -f "$f"
+              echo "Borrado: $f"
+              borrados=$((borrados+1))
+            fi
+          done
+          if [ "$borrados" -gt 0 ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            # Rehace el historial con solo los archivos actuales,
+            # para que los PDF borrados no se puedan ver en GitHub
+            git checkout --orphan limpio
+            git add -A
+            git commit -q -m "Limpieza: borrados $borrados documentos de más de 7 días"
+            git push -f origin limpio:main
+          else
+            echo "Nada que borrar"
+          fi
